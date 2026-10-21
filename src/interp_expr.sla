@@ -468,10 +468,16 @@ impl Interp {
         if op == TK_IDIV {
             if both {
                 if b.i == 0 {
-                    self.fail_str(STR_PTR("attempt to perform 'n//0'"), 25);
+                    self.fail_str(STR_PTR("attempt to divide by zero"), 25);
                     return v_nil();
                 };
+                if b.i == -1 {
+                    return v_int(0 - a.i);
+                };
                 let q = a.i / b.i;
+                if b.i == -1 {
+                    return v_int(0);
+                };
                 let r = a.i % b.i;
                 if r != 0 && ((r < 0) != (b.i < 0)) {
                     q = q - 1;
@@ -479,10 +485,6 @@ impl Interp {
                 return v_int(q);
             };
             let d = v_as_num(b);
-            if d == 0.0 {
-                self.fail_str(STR_PTR("attempt to perform 'n//0'"), 25);
-                return v_nil();
-            };
             return v_num(sa_math_floor(v_as_num(a) / d));
         };
         if op == TK_MOD {
@@ -498,10 +500,6 @@ impl Interp {
                 return v_int(r);
             };
             let d = v_as_num(b);
-            if d == 0.0 {
-                self.fail_str(STR_PTR("attempt to perform 'n%%0'"), 25);
-                return v_nil();
-            };
             let r = v_as_num(a) - sa_math_floor(v_as_num(a) / d) * d;
             return v_num(r);
         };
@@ -652,28 +650,22 @@ impl Interp {
                 c = s_cmp(a.s, b.s);
             } else {
                 if v_is_number(a) && v_is_number(b) {
-                    if v_as_num(a) < v_as_num(b) {
-                        c = -1;
-                    } else {
-                        if v_as_num(a) > v_as_num(b) {
-                            c = 1;
-                        };
-                    }
+                    c = v_cmp_num(&a, &b);
                 } else {
                     self.fail_str(STR_PTR("attempt to compare values"), 25);
                     return v_nil();
                 }
             };
             if nd.n == TK_LT {
-                return v_bool(c < 0);
+                return v_bool(c == -1);
             };
             if nd.n == TK_LE {
-                return v_bool(c <= 0);
+                return v_bool(c == -1 || c == 0);
             };
             if nd.n == TK_GT {
-                return v_bool(c > 0);
+                return v_bool(c == 1);
             };
-            return v_bool(c >= 0);
+            return v_bool(c == 0 || c == 1);
         };
         return self.num_bin(nd.n, a, b);
     }

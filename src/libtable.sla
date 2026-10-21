@@ -305,9 +305,22 @@ impl Interp {
             return bs_one(v_num(atan(y)));
         };
         if id == B_M_MODF {
-            let x = v_as_num(bs_arg(args, 0));
-            let ip = x as i64;
-            return bs_two(v_num(ip as f64), v_num(x - (ip as f64)));
+            let x = bs_arg(args, 0);
+            if x.tag == VT_INT {
+                return bs_two(x, v_num(0.0));
+            };
+            let n = v_as_num(x);
+            let ip = 0.0;
+            if n < 0.0 {
+                ip = sa_math_ceil(n);
+            } else {
+                ip = sa_math_floor(n);
+            };
+            let frac = 0.0;
+            if n != ip {
+                frac = n - ip;
+            };
+            return bs_two(v_num(ip), v_num(frac));
         };
         if id == B_M_DEG {
             return bs_one(v_num(v_as_num(bs_arg(args, 0)) * 57.29577951308232));

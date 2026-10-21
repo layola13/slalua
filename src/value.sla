@@ -1,5 +1,6 @@
 @import "sa_std/string.sa"
 @import "sa_std/string.sai"
+@import "sa_std/math.sai"
 @import "src/strutil.sla"
 
 const VT_NIL: i64 = 0;
@@ -88,6 +89,95 @@ fn v_as_num(v: Value) -> f64 {
     return v.f;
 }
 
+fn f_is_exact_int(f: f64) -> bool {
+    if f != f {
+        return false;
+    };
+    if f < -9223372036854775808.0 || f >= 9223372036854775808.0 {
+        return false;
+    };
+    let i = f as i64;
+    return (i as f64) == f;
+}
+
+fn v_int_eq_float(i: i64, f: f64) -> bool {
+    if f_is_exact_int(f) == false {
+        return false;
+    };
+    let fi = f as i64;
+    return i == fi;
+}
+
+fn v_cmp_int_float(i: i64, f: f64) -> i64 {
+    if f != f {
+        return 2;
+    };
+    if i >= -9007199254740992 && i <= 9007199254740992 {
+        let x = i as f64;
+        if x < f {
+            return -1;
+        };
+        if x > f {
+            return 1;
+        };
+        return 0;
+    };
+    let c = sa_math_ceil(f);
+    if c >= -9223372036854775808.0 && c < 9223372036854775808.0 {
+        let ci = c as i64;
+        if i < ci {
+            return -1;
+        };
+        if i > ci {
+            return 1;
+        };
+        return 0;
+    };
+    if f > 0.0 {
+        return -1;
+    };
+    return 1;
+}
+
+fn v_cmp_float_int(f: f64, i: i64) -> i64 {
+    let c = v_cmp_int_float(i, f);
+    if c == 2 {
+        return 2;
+    };
+    if c == -1 {
+        return 1;
+    };
+    if c == 1 {
+        return -1;
+    };
+    return 0;
+}
+
+fn v_cmp_num(a: &Value, b: &Value) -> i64 {
+    if a.tag == VT_INT && b.tag == VT_INT {
+        if a.i < b.i {
+            return -1;
+        };
+        if a.i > b.i {
+            return 1;
+        };
+        return 0;
+    };
+    if a.tag == VT_INT {
+        return v_cmp_int_float(a.i, b.f);
+    };
+    if b.tag == VT_INT {
+        return v_cmp_float_int(a.f, b.i);
+    };
+    if a.f < b.f {
+        return -1;
+    };
+    if a.f > b.f {
+        return 1;
+    };
+    return 0;
+}
+
 fn v_equal(a: &Value, b: &Value) -> bool {
     if a.tag == VT_NIL || b.tag == VT_NIL {
         return a.tag == b.tag;
@@ -97,10 +187,10 @@ fn v_equal(a: &Value, b: &Value) -> bool {
             if b.tag == VT_INT {
                 return a.i == b.i;
             };
-            return (a.i as f64) == b.f;
+            return v_int_eq_float(a.i, b.f);
         };
         if b.tag == VT_INT {
-            return a.f == (b.i as f64);
+            return v_int_eq_float(b.i, a.f);
         };
         return a.f == b.f;
     };
@@ -123,13 +213,8 @@ fn v_equal(a: &Value, b: &Value) -> bool {
 }
 
 fn v_lt(a: &Value, b: &Value) -> bool {
-    if a.tag == VT_INT && b.tag == VT_INT {
-        return a.i < b.i;
-    };
     if (a.tag == VT_INT || a.tag == VT_NUM) && (b.tag == VT_INT || b.tag == VT_NUM) {
-        let x = v_as_num(*a);
-        let y = v_as_num(*b);
-        return x < y;
+        return v_cmp_num(a, b) < 0;
     };
     if a.tag == VT_STR && b.tag == VT_STR {
         return s_cmp(a.s, b.s) < 0;
