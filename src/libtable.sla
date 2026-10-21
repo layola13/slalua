@@ -12,6 +12,7 @@
 @import "src/parser.sla"
 @import "src/opcodes.sla"
 @import "src/libutil.sla"
+@import "src/libm.sai"
 
 fn istr(s: ptr, n: u64) -> u64 {
     return s_from(s, n);
@@ -132,7 +133,7 @@ impl Interp {
                 return bs_one(v);
             };
             let f = v_as_num(v);
-            if f < 0.0 { f = 0.0 - f; };
+            if f < 0.0 { return bs_one(v_num(0.0 - f)); };
             return bs_one(v_num(f));
         };
         if id == B_M_MAX || id == B_M_MIN {
@@ -140,9 +141,11 @@ impl Interp {
             let i = 1;
             while i < (len(args) as i64) {
                 let v = args[i];
-                let better = v_as_num(v) > v_as_num(best);
-                if id == B_M_MIN { better = v_as_num(v) < v_as_num(best); };
-                if better { best = v; };
+                if id == B_M_MIN {
+                    if v_as_num(v) < v_as_num(best) { best = v; };
+                } else {
+                    if v_as_num(v) > v_as_num(best) { best = v; };
+                };
                 i = i + 1;
             }
             return bs_one(best);
@@ -163,6 +166,93 @@ impl Interp {
                 return bs_one(v_int(v.f as i64));
             };
             return bs_one(v_nil());
+        };
+        if id == B_M_RANDOM {
+            let nargs = len(args) as i64;
+            if nargs == 0 {
+                let r = self.rng_next();
+                let frac = (r >> 11) as f64 * (1.0 / 9007199254740992.0);
+                return bs_one(v_num(frac));
+            };
+            if nargs == 1 {
+                let hi = self.bi_int(args[0], 1);
+                if hi < 1 {
+                    self.fail_str(STR_PTR("bad argument to 'random'"), 24);
+                    return Vec::new();
+                };
+                return bs_one(v_int(1 + self.rng_below(hi)));
+            };
+            let lo = self.bi_int(args[0], 1);
+            let hi = self.bi_int(args[1], lo);
+            if hi < lo {
+                self.fail_str(STR_PTR("bad argument to 'random'"), 24);
+                return Vec::new();
+            };
+            return bs_one(v_int(lo + self.rng_below(hi - lo + 1)));
+        };
+        if id == B_M_RANDOMSEED {
+            let a = bs_arg(args, 0);
+            let b = bs_arg(args, 1);
+            if a.tag == VT_NIL {
+                let s1 = (self.rng_next() >> 1) as i64;
+                let s2 = (self.rng_next() >> 1) as i64;
+                self.rng0 = s1 as u64;
+                if self.rng0 == 0 { self.rng0 = 88172645463325252; };
+                self.rng1 = s2 as u64;
+                if self.rng1 == 0 { self.rng1 = 6364136223846793005; };
+                return bs_two(v_int(s1), v_int(s2));
+            };
+            let s1 = self.bi_int(a, 1);
+            let s2 = self.bi_int(b, s1);
+            self.rng0 = s1 as u64;
+            if self.rng0 == 0 { self.rng0 = 88172645463325252; };
+            self.rng1 = s2 as u64;
+            if self.rng1 == 0 { self.rng1 = 6364136223846793005; };
+            return bs_two(v_int(s1), v_int(s2));
+        };
+        if id == B_M_LOG {
+            let x = v_as_num(bs_arg(args, 0));
+            if len(args) > 1 {
+                let b = v_as_num(args[1]);
+                return bs_one(v_num(log(x) / log(b)));
+            };
+            return bs_one(v_num(log(x)));
+        };
+        if id == B_M_EXP {
+            return bs_one(v_num(exp(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_SIN {
+            return bs_one(v_num(sa_math_sin(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_COS {
+            return bs_one(v_num(sa_math_cos(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_TAN {
+            return bs_one(v_num(tan(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_ASIN {
+            return bs_one(v_num(asin(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_ACOS {
+            return bs_one(v_num(acos(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_ATAN {
+            let y = v_as_num(bs_arg(args, 0));
+            if len(args) > 1 {
+                return bs_one(v_num(atan2(y, v_as_num(args[1]))));
+            };
+            return bs_one(v_num(atan(y)));
+        };
+        if id == B_M_MODF {
+            let x = v_as_num(bs_arg(args, 0));
+            let ip = x as i64;
+            return bs_two(v_num(ip as f64), v_num(x - (ip as f64)));
+        };
+        if id == B_M_DEG {
+            return bs_one(v_num(v_as_num(bs_arg(args, 0)) * 57.29577951308232));
+        };
+        if id == B_M_RAD {
+            return bs_one(v_num(v_as_num(bs_arg(args, 0)) * 0.017453292519943295));
         };
         if id == B_OS_CLOCK {
             return bs_one(v_num(0.0));

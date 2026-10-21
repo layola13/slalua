@@ -181,7 +181,11 @@ impl Interp {
                         if k == 99 {
                             out = s_cat(out, s_char(self.bi_int(v, 0) as u8));
                         } else {
-                            out = s_cat(out, v_to_string(v));
+                            if k == 120 {
+                                out = s_cat(out, s_hex(self.bi_int(v, 0) as u64));
+                            } else {
+                                out = s_cat(out, v_to_string(v));
+                            }
                         }
                     }
                 }

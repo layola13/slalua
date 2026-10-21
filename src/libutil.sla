@@ -10,6 +10,13 @@ fn bs_one(v: Value) -> Vec<Value> {
     return out;
 }
 
+fn bs_two(a: Value, b: Value) -> Vec<Value> {
+    let out = Vec::new();
+    out.push(a);
+    out.push(b);
+    return out;
+}
+
 fn bs_rest(args: &Vec<Value>, from: i64) -> Vec<Value> {
     let out = Vec::new();
     let i = from;

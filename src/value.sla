@@ -83,18 +83,16 @@ fn v_equal(a: &Value, b: &Value) -> bool {
         return a.tag == b.tag;
     };
     if (a.tag == VT_INT || a.tag == VT_NUM) && (b.tag == VT_INT || b.tag == VT_NUM) {
-        if a.tag == VT_INT && b.tag == VT_INT {
-            return a.i == b.i;
-        };
-        let an = a.f;
         if a.tag == VT_INT {
-            an = a.i as f64;
+            if b.tag == VT_INT {
+                return a.i == b.i;
+            };
+            return (a.i as f64) == b.f;
         };
-        let bn = b.f;
         if b.tag == VT_INT {
-            bn = b.i as f64;
+            return a.f == (b.i as f64);
         };
-        return an == bn;
+        return a.f == b.f;
     };
     if a.tag != b.tag {
         return false;
@@ -109,6 +107,36 @@ fn v_equal(a: &Value, b: &Value) -> bool {
         return a.i == b.i;
     };
     return a.f == b.f;
+}
+
+fn mix64(x: u64) -> u64 {
+    let z = x;
+    z = z ^ (z >> 33);
+    z = z * 6364136223846793005;
+    z = z ^ (z >> 29);
+    return z;
+}
+
+fn v_hash(v: &Value) -> u64 {
+    if v.tag == VT_INT {
+        return mix64(v.i as u64);
+    };
+    if v.tag == VT_NUM {
+        return mix64((v.f as i64) as u64);
+    };
+    if v.tag == VT_STR {
+        let n = s_len(v.s);
+        let h: u64 = 1469598103934665603;
+        let i: u64 = 0;
+        while i < n {
+            h = h ^ (s_byte(v.s, i) as u64);
+            h = h * 1099511628211;
+            i = i + 1;
+        }
+        return h;
+    };
+    let t = v.tag as u64;
+    return mix64((v.i as u64) ^ (t * 1099511628211));
 }
 
 fn v_type_name(v: Value) -> u64 {

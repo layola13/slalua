@@ -1,0 +1,10 @@
+@import "sa_std/io/print.sai"
+@import "src/libm.sai"
+
+fn main() -> i32 {
+    println("log_e={}", log(2.718281828459045));
+    println("log8={}", log(8.0));
+    println("exp1={}", exp(1.0));
+    println("log2={}", log2(8.0));
+    return 0;
+}

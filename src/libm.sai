@@ -1,0 +1,9 @@
+@extern log(x: f64) -> f64
+@extern exp(x: f64) -> f64
+@extern tan(x: f64) -> f64
+@extern asin(x: f64) -> f64
+@extern acos(x: f64) -> f64
+@extern atan(x: f64) -> f64
+@extern atan2(y: f64, x: f64) -> f64
+@extern log2(x: f64) -> f64
+@extern log10(x: f64) -> f64

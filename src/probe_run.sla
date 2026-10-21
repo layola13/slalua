@@ -4,6 +4,7 @@
 @import "sa_std/fmt.sai"
 @import "sa_std/ptr.sa"
 @import "sa_std/fs.sa"
+@import "sa_std/env.sa"
 @import "src/tok.sla"
 @import "src/rt.sa"
 @import "src/strutil.sla"
@@ -15,9 +16,19 @@ fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
     return sa_fs_read_file(path_ptr, path_len, 4194304);
 }
 
+fn script_source() -> u64 {
+    let envbuf = sa_env_get(STR_PTR("SLALUA_SCRIPT"), STR_LEN("SLALUA_SCRIPT"));
+    if envbuf != 0 {
+        let data = ENV_BUFFER_DATA(envbuf);
+        let n: u64 = sa_env_buffer_len(envbuf);
+        return read_text(data, n);
+    };
+    let path = "/content/lua/testes/nextvar.lua";
+    return read_text(STR_PTR(path), STR_LEN(path));
+}
+
 fn main() -> i32 {
-    let path = "../lua/testes/nextvar.lua";
-    let src = read_text(STR_PTR(path), STR_LEN(path));
+    let src = script_source();
     if src == 0 {
         println("read failed");
         return 1;

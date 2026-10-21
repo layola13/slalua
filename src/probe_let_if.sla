@@ -1,0 +1,36 @@
+@import "sa_std/io/print.sai"
+
+fn m1() -> f64 {
+    let x = 2.5;
+    let i = 3;
+    if false {
+        x = i as f64;
+    };
+    return x;
+}
+
+fn m3() -> i64 {
+    let x = 7;
+    let f = 2.5;
+    if false {
+        x = f as i64;
+    };
+    return x;
+}
+
+fn m4() -> f64 {
+    let x = 2.5;
+    let i = 3;
+    let y = i as f64;
+    if false {
+        x = y;
+    };
+    return x;
+}
+
+fn main() -> i32 {
+    println("m1={}", m1());
+    println("m3={}", m3());
+    println("m4={}", m4());
+    return 0;
+}

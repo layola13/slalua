@@ -74,6 +74,10 @@ fn s_f64(v: f64) -> u64 {
     return sa_fmt_f64(v, 14);
 }
 
+fn s_hex(v: u64) -> u64 {
+    return sa_fmt_u64(v, 16);
+}
+
 fn s_bool(v: bool) -> u64 {
     if v {
         return sa_fmt_bytes(STR_PTR("true"), 4);

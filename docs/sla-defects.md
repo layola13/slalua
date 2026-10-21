@@ -228,3 +228,71 @@ if len(v) > 0 {
 Status: open. The same pattern must be audited anywhere a guard protects an
 index, division, or affine call; fixed occurrences in `B_GETMETA` and
 `bi_require` were rewritten as nested `if`s.
+
+## D-010 Conditional cast assignment corrupts the merged value
+
+Assigning a *cast expression* to a local inside an `if` branch corrupts that
+local at the merge point, even when the branch is never taken. For `f64` the
+merged value becomes the integer value of the original IEEE-754 bit pattern,
+converted back to `f64`.
+
+Minimal reproducer (`src/probe_let_if.sla`, function `m1`):
+
+```sla
+fn m1() -> f64 {
+    let x = 2.5;
+    let i = 3;
+    if false {
+        x = i as f64;
+    };
+    return x;
+}
+```
+
+Expected `2.5`; observed `4612811918334231000`, i.e. the integer value of the
+bits of `2.5` (`0x4004000000000000`) rendered as an `f64`. The integer
+direction is equally affected:
+
+```sla
+fn m3() -> i64 {
+    let x = 7;
+    let f = 2.5;
+    if false {
+        x = f as i64;
+    };
+    return x;
+}
+```
+
+Expected `7`; observed `0`.
+
+Only casts trigger it: plain constant assignment (`x = 9.0`), assignment of a
+pre-computed value without a cast, and both-branch assignment all merge
+correctly. It surfaced in `v_equal`:
+
+```sla
+let an = a.f;
+if a.tag == VT_INT {
+    an = a.i as f64;
+};
+return an == bn;
+```
+
+which made `2047.0 == 2047` evaluate to false. It also silently broke the
+float branch of `math.abs` and the `math.min` reduction.
+
+Workaround: return from each branch instead of assigning a cast across the
+merge:
+
+```sla
+if a.tag == VT_INT {
+    if b.tag == VT_INT { return a.i == b.i; };
+    return (a.i as f64) == b.f;
+};
+if b.tag == VT_INT {
+    return a.f == (b.i as f64);
+};
+return a.f == b.f;
+```
+
+Status: open (codegen). Reproducer: `src/probe_let_if.sla`.

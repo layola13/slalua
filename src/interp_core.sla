@@ -31,6 +31,9 @@ struct Entry {
 
 struct Table {
     entries: Vec<Entry>,
+    hashes: Vec<u64>,
+    buckets: Vec<i64>,
+    dead: i64,
     meta: i64,
 }
 
@@ -54,6 +57,8 @@ struct Interp {
     retvals: Vec<Value>,
     gotolabel: u64,
     curline: i64,
+    rng0: u64,
+    rng1: u64,
 }
 
 fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
@@ -69,7 +74,13 @@ fn entry_new(key: Value, val: Value) -> Entry {
 }
 
 fn table_new() -> Table {
-    return Table { entries: Vec::new(), meta: -1 };
+    return Table {
+        entries: Vec::new(),
+        hashes: Vec::new(),
+        buckets: Vec::new(),
+        dead: 0,
+        meta: -1,
+    };
 }
 
 fn func_new(params: Vec<i64>, body: i64, vararg: i64, has_self: i64, env: i64) -> Func {
@@ -89,6 +100,8 @@ fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
         retvals: Vec::new(),
         gotolabel: 0,
         curline: 0,
+        rng0: 88172645463325252,
+        rng1: 6364136223846793005,
     };
     it.globals = it.new_table();
     return it;
@@ -207,15 +220,133 @@ impl Interp {
         self.table_set(self.globals, v_str(name), val);
     }
 
-    fn table_get(&self, tid: i64, key: Value) -> Value {
-        let t = &self.tables[tid];
+    fn t_find(&self, tid: i64, key: &Value, h: u64) -> i64 {
+        let cap = len(self.tables[tid].buckets) as i64;
+        if cap == 0 {
+            return -1;
+        };
+        let mask = cap - 1;
+        let s = (h & (mask as u64)) as i64;
+        let step = 0;
+        while step <= mask {
+            let b = self.tables[tid].buckets[s];
+            if b < 0 {
+                return -1;
+            };
+            if self.tables[tid].hashes[b] == h {
+                if v_equal(&self.tables[tid].entries[b].key, key) {
+                    return b;
+                };
+            };
+            s = (s + 1) & mask;
+            step = step + 1;
+        }
+        return -1;
+    }
+
+    fn t_rebuild(&self, tid: i64, want: i64) -> void {
+        let n = len(self.tables[tid].entries) as i64;
+        let need = n * 2 + 8;
+        let cap: i64 = 8;
+        while cap < need {
+            cap = cap * 2;
+        }
+        if want > cap {
+            cap = want;
+        };
+        let buckets = Vec::new();
+        let k = 0;
+        while k < cap {
+            buckets.push(-1);
+            k = k + 1;
+        }
+        let mask = cap - 1;
         let i = 0;
-        while i < (len(t.entries) as i64) {
-            if v_equal(&t.entries[i].key, &key) {
-                return t.entries[i].val;
+        while i < n {
+            let h = self.tables[tid].hashes[i];
+            let s = (h & (mask as u64)) as i64;
+            let step = 0;
+            while buckets[s] >= 0 {
+                s = (s + 1) & mask;
+                step = step + 1;
+            }
+            buckets[s] = i;
+            i = i + 1;
+        }
+        self.tables[tid].buckets = buckets;
+    }
+
+    fn t_grow(&self, tid: i64) -> void {
+        let cap = len(self.tables[tid].buckets) as i64;
+        if cap == 0 {
+            self.t_rebuild(tid, 8);
+            return;
+        };
+        let n = len(self.tables[tid].entries) as i64;
+        if (n + 1) * 10 > cap * 7 {
+            self.t_rebuild(tid, cap * 2);
+        };
+    }
+
+    fn t_compact(&self, tid: i64) -> void {
+        let entries = Vec::new();
+        let hashes = Vec::new();
+        let i = 0;
+        while i < (len(self.tables[tid].entries) as i64) {
+            if self.tables[tid].entries[i].val.tag != VT_NIL {
+                entries.push(self.tables[tid].entries[i]);
+                hashes.push(self.tables[tid].hashes[i]);
             };
             i = i + 1;
         }
+        self.tables[tid].entries = entries;
+        self.tables[tid].hashes = hashes;
+        self.tables[tid].dead = 0;
+        self.t_rebuild(tid, 0);
+    }
+
+    fn t_insert(&self, tid: i64, key: Value, val: Value, h: u64) -> void {
+        let live = (len(self.tables[tid].entries) as i64) - self.tables[tid].dead;
+        if self.tables[tid].dead > 64 {
+            if self.tables[tid].dead > live {
+                self.t_compact(tid);
+            };
+        };
+        self.t_grow(tid);
+        let cap = len(self.tables[tid].buckets) as i64;
+        let mask = cap - 1;
+        let s = (h & (mask as u64)) as i64;
+        let step = 0;
+        while self.tables[tid].buckets[s] >= 0 {
+            s = (s + 1) & mask;
+            step = step + 1;
+        }
+        let idx = len(self.tables[tid].entries) as i64;
+        self.tables[tid].entries.push(entry_new(key, val));
+        self.tables[tid].hashes.push(h);
+        self.tables[tid].buckets[s] = idx;
+    }
+
+    fn t_next_from(&self, tid: i64, start: i64) -> (Value, Value) {
+        let j = start;
+        while j < (len(self.tables[tid].entries) as i64) {
+            if self.tables[tid].entries[j].val.tag != VT_NIL {
+                return (self.tables[tid].entries[j].key, self.tables[tid].entries[j].val);
+            };
+            j = j + 1;
+        }
+        return (v_nil(), v_nil());
+    }
+
+    fn table_get(&self, tid: i64, key: Value) -> Value {
+        let h = v_hash(&key);
+        let idx = self.t_find(tid, &key, h);
+        if idx >= 0 {
+            let v = self.tables[tid].entries[idx].val;
+            if v.tag != VT_NIL {
+                return v;
+            };
+        };
         return v_nil();
     }
 
@@ -224,25 +355,25 @@ impl Interp {
             self.fail_str(STR_PTR("table index is nil"), 19);
             return;
         };
-        let i = 0;
-        while i < (len(self.tables[tid].entries) as i64) {
-            if v_equal(&self.tables[tid].entries[i].key, &key) {
-                if val.tag == VT_NIL {
-                    let last = (len(self.tables[tid].entries) as i64) - 1;
-                    if i != last {
-                        self.tables[tid].entries[i] = self.tables[tid].entries[last];
-                    };
-                    self.tables[tid].entries.pop();
-                } else {
-                    let nv = value_new(val.tag, val.i, val.f, val.s);
-                    self.tables[tid].entries[i].val = nv;
+        let h = v_hash(&key);
+        let idx = self.t_find(tid, &key, h);
+        if idx >= 0 {
+            if val.tag == VT_NIL {
+                if self.tables[tid].entries[idx].val.tag != VT_NIL {
+                    self.tables[tid].dead = self.tables[tid].dead + 1;
                 };
-                return;
+                self.tables[tid].entries[idx].val = v_nil();
+            } else {
+                if self.tables[tid].entries[idx].val.tag == VT_NIL {
+                    self.tables[tid].dead = self.tables[tid].dead - 1;
+                };
+                let nv = value_new(val.tag, val.i, val.f, val.s);
+                self.tables[tid].entries[idx].val = nv;
             };
-            i = i + 1;
-        }
+            return;
+        };
         if val.tag != VT_NIL {
-            self.tables[tid].entries.push(entry_new(key, val));
+            self.t_insert(tid, key, val, h);
         };
     }
 
@@ -269,31 +400,32 @@ impl Interp {
     }
 
     fn table_next(&self, tid: i64, key: Value) -> (Value, Value) {
-        let start = 0;
-        if key.tag != VT_NIL {
-            let i = 0;
-            let found = 0;
-            while i < (len(self.tables[tid].entries) as i64) {
-                if v_equal(&self.tables[tid].entries[i].key, &key) {
-                    start = i + 1;
-                    found = 1;
-                    i = len(self.tables[tid].entries) as i64;
-                    continue;
-                };
-                i = i + 1;
-            }
-            if found == 0 {
-                return (v_nil(), v_nil());
-            };
+        if key.tag == VT_NIL {
+            return self.t_next_from(tid, 0);
         };
-        let j = start;
-        while j < (len(self.tables[tid].entries) as i64) {
-            if self.tables[tid].entries[j].val.tag != VT_NIL {
-                return (self.tables[tid].entries[j].key, self.tables[tid].entries[j].val);
-            };
-            j = j + 1;
-        }
-        return (v_nil(), v_nil());
+        let h = v_hash(&key);
+        let idx = self.t_find(tid, &key, h);
+        if idx < 0 {
+            return (v_nil(), v_nil());
+        };
+        return self.t_next_from(tid, idx + 1);
+    }
+
+    fn rng_next(&self) -> u64 {
+        let x = self.rng0;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        self.rng0 = x;
+        self.rng1 = self.rng1 + 6364136223846793005;
+        return x ^ (self.rng1 >> 17);
+    }
+
+    fn rng_below(&self, n: i64) -> i64 {
+        if n <= 1 {
+            return 0;
+        };
+        return (self.rng_next() % (n as u64)) as i64;
     }
 
     fn fail_str(&self, msg: ptr, n: u64) -> void {
