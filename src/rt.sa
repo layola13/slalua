@@ -36,6 +36,14 @@
     !__sla_buf_raw_%out_ptr
 [END_MACRO]
 
+[MACRO] SLA_BUF_ADDR %out_u64, %buffer
+    __sla_buf_addr_raw_%out_u64 = call @sa_fmt_buffer_data(%buffer)
+    __sla_buf_addr_slot_%out_u64 = stack_alloc 8
+    store __sla_buf_addr_slot_%out_u64+0, __sla_buf_addr_raw_%out_u64
+    %out_u64 = load __sla_buf_addr_slot_%out_u64+0 as u64
+    !__sla_buf_addr_raw_%out_u64
+[END_MACRO]
+
 [MACRO] SLA_BUF_SLICE %out_buffer, %buffer, %start, %len
     __sbs_data_%out_buffer = call @sa_fmt_buffer_data(%buffer)
     __sbs_ptr_%out_buffer = ptr_add __sbs_data_%out_buffer, %start

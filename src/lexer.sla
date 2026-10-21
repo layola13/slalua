@@ -659,11 +659,6 @@ impl Lexer {
     }
 
     fn lex_all(&self) -> void {
-        if self.peek(0) == 35 {
-            while self.pos < self.len && self.peek(0) != 10 {
-                self.take();
-            }
-        };
         let going = true;
         while going {
             self.skip_ws();

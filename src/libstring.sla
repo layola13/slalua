@@ -173,56 +173,6 @@ impl Interp {
         return out;
     };
 
-    fn bi_format(&self, args: &Vec<Value>) -> u64 {
-        let f = v_to_string(bs_arg(args, 0));
-        let n = s_len(f);
-        let out = bs_str(STR_PTR(""), 0);
-        let ai = 1;
-        let i: u64 = 0;
-        while i < n {
-            let c = s_byte(f, i);
-            if c != 37 {
-                out = s_cat(out, s_char(c));
-                i = i + 1;
-                continue;
-            };
-            i = i + 1;
-            if i >= n {
-                out = s_cat(out, s_char(37));
-                continue;
-            };
-            let k = s_byte(f, i);
-            i = i + 1;
-            if k == 37 {
-                out = s_cat(out, s_char(37));
-                continue;
-            };
-            let v = bs_arg(args, ai);
-            ai = ai + 1;
-            if k == 115 {
-                out = s_cat(out, v_to_string(v));
-            } else {
-                if k == 100 || k == 105 {
-                    out = s_cat(out, s_i64(self.bi_int(v, 0)));
-                } else {
-                    if k == 102 || k == 103 {
-                        out = s_cat(out, s_f64(v_as_num(v)));
-                    } else {
-                        if k == 99 {
-                            out = s_cat(out, s_char(self.bi_int(v, 0) as u8));
-                        } else {
-                            if k == 120 {
-                                out = s_cat(out, s_hex(self.bi_int(v, 0) as u64));
-                            } else {
-                                out = s_cat(out, v_to_string(v));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return out;
-    }
 
     fn pat_posrelat(&self, pos: i64, len: i64) -> i64 {
         if pos >= 0 {
@@ -564,3 +514,5 @@ impl Interp {
         return r;
     }
 };
+
+@import "src/libformat.sla"

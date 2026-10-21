@@ -1,0 +1,214 @@
+impl Interp {
+    fn bi_format(&self, args: &Vec<Value>) -> u64 {
+        let f = v_to_string(bs_arg(args, 0));
+        let n = s_len(f);
+        let out = bs_str(STR_PTR(""), 0);
+        let ai = 1;
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(f, i);
+            if c != 37 {
+                out = s_cat(out, s_char(c));
+                i = i + 1;
+                continue;
+            };
+            i = i + 1;
+            if i >= n {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let left = false;
+            let zero = false;
+            let width: i64 = 0;
+            let prec: i64 = -1;
+            let scanning = true;
+            while scanning {
+                if i >= n {
+                    scanning = false;
+                    continue;
+                };
+                let pc = s_byte(f, i);
+                if pc == 45 {
+                    left = true;
+                    i = i + 1;
+                    continue;
+                };
+                if pc == 48 && width == 0 {
+                    zero = true;
+                    i = i + 1;
+                    continue;
+                };
+                if pc == 43 || pc == 32 || pc == 35 {
+                    i = i + 1;
+                    continue;
+                };
+                if pc >= 48 && pc <= 57 {
+                    width = width * 10 + (pc as i64) - 48;
+                    i = i + 1;
+                    continue;
+                };
+                if pc == 46 {
+                    prec = 0;
+                    i = i + 1;
+                    while i < n {
+                        let dc = s_byte(f, i);
+                        if dc < 48 || dc > 57 {
+                            break;
+                        };
+                        prec = prec * 10 + (dc as i64) - 48;
+                        i = i + 1;
+                    }
+                    continue;
+                };
+                scanning = false;
+            }
+            if i >= n {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let k = s_byte(f, i);
+            i = i + 1;
+            if k == 37 {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let v = bs_arg(args, ai);
+            ai = ai + 1;
+            let item = bs_str(STR_PTR(""), 0);
+            if k == 113 {
+                if v.tag == VT_NIL {
+                    item = s_from(STR_PTR("nil"), 3);
+                } else if v.tag == VT_BOOL {
+                    if v.i == 0 {
+                        item = s_from(STR_PTR("false"), 5);
+                    } else {
+                        item = s_from(STR_PTR("true"), 4);
+                    };
+                } else if v.tag == VT_INT {
+                    item = s_i64(v.i);
+                } else if v.tag == VT_NUM {
+                    let fv = v.f;
+                    if fv != fv {
+                        item = s_from(STR_PTR("(0/0)"), 5);
+                    } else if fv != 0.0 && fv * 2.0 == fv {
+                        if fv > 0.0 {
+                            item = s_from(STR_PTR("1e9999"), 6);
+                        } else {
+                            item = s_from(STR_PTR("-1e9999"), 7);
+                        };
+                    } else {
+                        let fs = sa_fmt_f64(fv, 17);
+                        let has_dot = false;
+                        let fi: u64 = 0;
+                        while fi < s_len(fs) {
+                            let fc = s_byte(fs, fi);
+                            if fc == 46 || fc == 101 || fc == 69 {
+                                has_dot = true;
+                            };
+                            fi = fi + 1;
+                        }
+                        if has_dot == false {
+                            fs = s_cat(fs, s_from(STR_PTR(".0"), 2));
+                        };
+                        item = fs;
+                    };
+                } else if v.tag == VT_STR {
+                    let vs = v.s;
+                    let q = s_from(STR_PTR("\""), 1);
+                    let qi: u64 = 0;
+                    while qi < s_len(vs) {
+                        let ch = s_byte(vs, qi);
+                        if ch == 34 || ch == 92 {
+                            q = s_cat(q, s_char(92));
+                            q = s_cat(q, s_char(ch));
+                        } else if ch == 10 {
+                            q = s_cat(q, s_char(92));
+                            q = s_cat(q, s_char(10));
+                        } else if ch == 0 && (qi + 1 >= s_len(vs) || s_byte(vs, qi + 1) < 48 || s_byte(vs, qi + 1) > 57) {
+                            q = s_cat(q, s_char(92));
+                            q = s_cat(q, s_char(48));
+                        } else if ch < 32 || ch == 127 {
+                            q = s_cat(q, s_char(92));
+                            q = s_cat(q, s_char(48 + (ch / 100)));
+                            q = s_cat(q, s_char(48 + ((ch / 10) % 10)));
+                            q = s_cat(q, s_char(48 + (ch % 10)));
+                        } else {
+                            q = s_cat(q, s_char(ch));
+                        };
+                        qi = qi + 1;
+                    }
+                    q = s_cat(q, s_from(STR_PTR("\""), 1));
+                    item = q;
+                } else {
+                    self.fail_text(bs_str(STR_PTR("value has no literal form"), 25));
+                    return bs_str(STR_PTR(""), 0);
+                };
+            } else if k == 112 {
+                if v.tag == VT_STR {
+                    if s_len(v.s) <= 40 {
+                        let h: u64 = 5381;
+                        let hi: u64 = 0;
+                        while hi < s_len(v.s) {
+                            h = h * 33 + (s_byte(v.s, hi) as u64);
+                            hi = hi + 1;
+                        }
+                        item = s_cat(s_from(STR_PTR("0x"), 2), s_hex(h));
+                    } else {
+                        let addr: u64 = SLA_BUF_ADDR(v.s);
+                        item = s_cat(s_from(STR_PTR("0x"), 2), s_hex(addr));
+                    };
+                } else if v.tag == VT_NIL || v.tag == VT_BOOL || v.tag == VT_INT || v.tag == VT_NUM {
+                    item = s_from(STR_PTR("(null)"), 6);
+                } else {
+                    item = s_cat(s_from(STR_PTR("0x"), 2), s_hex((v.tag * 1099511627776) + (v.i as u64)));
+                };
+            } else if k == 115 {
+                item = v_to_string(v);
+                if width > 0 || prec >= 0 {
+                    let zi: u64 = 0;
+                    while zi < s_len(item) {
+                        if s_byte(item, zi) == 0 {
+                            self.fail_text(bs_str(STR_PTR("string contains zeros"), 22));
+                            return bs_str(STR_PTR(""), 0);
+                        };
+                        zi = zi + 1;
+                    }
+                };
+                if prec >= 0 && (prec as u64) < s_len(item) {
+                    item = s_slice(item, 0, prec as u64);
+                };
+            } else if k == 100 || k == 105 {
+                item = s_i64(self.bi_int(v, 0));
+            } else if k == 102 || k == 103 {
+                item = s_f64(v_as_num(v));
+            } else if k == 99 {
+                item = s_char(self.bi_int(v, 0) as u8);
+            } else if k == 120 {
+                item = s_hex(self.bi_int(v, 0) as u64);
+            } else {
+                item = v_to_string(v);
+            };
+            let ilen = s_len(item) as i64;
+            let pad = width - ilen;
+            if pad > 0 {
+                let sp = bs_str(STR_PTR(""), 0);
+                let pch: u8 = 32;
+                if zero && left == false {
+                    pch = 48;
+                };
+                let pi: i64 = 0;
+                while pi < pad {
+                    sp = s_cat(sp, s_char(pch));
+                    pi = pi + 1;
+                }
+                if left {
+                    item = s_cat(item, sp);
+                } else {
+                    item = s_cat(sp, item);
+                };
+            };
+            out = s_cat(out, item);
+        }
+        return out;
+    }
+}

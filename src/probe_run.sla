@@ -33,7 +33,17 @@ fn main() -> i32 {
         println("read failed");
         return 1;
     };
-    let text = s_from(SLA_FS_BUFFER_DATA(src), SLA_FS_BUFFER_LEN(src));
+    let raw = s_from(SLA_FS_BUFFER_DATA(src), SLA_FS_BUFFER_LEN(src));
+    let text = raw;
+    if s_len(text) > 0 && s_byte(text, 0) == 35 {
+        let i: u64 = 0;
+        while i < s_len(text) && s_byte(text, i) != 10 {
+            i = i + 1;
+        }
+        if i < s_len(text) {
+            text = s_slice(text, i + 1, s_len(text) - i - 1);
+        };
+    };
     let lx = lex_source(text);
     let p = parse_tokens(lx);
     if p.err != 0 {
