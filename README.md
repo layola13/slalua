@@ -29,9 +29,12 @@ src/parse_core.sla parser cursor + arena/list builders
 src/parse_expr.sla Lua expression grammar + precedence
 src/parse_stmt.sla Lua statements, blocks, local/global attributes
 src/parser.sla     parser entry point
-src/value.sla      Value / Table / Function arenas
-src/interp.sla     tree-walking evaluator
-src/stdlib.sla     base / string / table / math libraries
+src/value.sla      Value tagged union + conversions
+src/interp_core.sla arenas (Env/Table/Func), globals, control codes
+src/interp_expr.sla expression evaluator, calls, closures, indexing
+src/interp_stmt.sla statements, loops, blocks, goto
+src/builtins.sla   base / string / table / math / os builtins
+src/interp.sla     evaluator entry point
 docs/sla-defects.md  defects found while porting
 ```
 
@@ -55,9 +58,25 @@ sa build-exe .sla-cache/parseall.sa -o /tmp/parseall
 /tmp/parseall
 ```
 
+The evaluator runs blocks, locals/globals, assignment, numeric and generic
+loops, `repeat`, closures, method calls, varargs (including Lua 5.5 named
+varargs), table constructors, `goto`, `pcall`/`error`, and a core set of base,
+`string`, `table`, `math` and `os` functions. It executes
+`tests/hello.lua` and `tests/features.lua` and advances through
+`testes/vararg.lua` up to the Lua 5.5 named-vararg `n` validation checks.
+
+Run the evaluator smoke test with:
+
+```sh
+sla build src/probe_run.sla --out .sla-cache/run.sa
+sa build-exe .sla-cache/run.sa -o /tmp/run
+/tmp/run
+```
+
 Each stage is compiled with `sla check`, `sla build` and executed before moving
-on. Defects found so far are tracked in `docs/sla-defects.md`. The evaluator and
-stdlib are next.
+on. Defects found so far are tracked in `docs/sla-defects.md`. Coroutines,
+metamethod coverage (`__newindex`, `__call`, arithmetic), `require`, and the
+debug library are next.
 
 ## Build
 

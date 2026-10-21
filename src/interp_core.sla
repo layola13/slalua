@@ -1,0 +1,308 @@
+@import "sa_std/vec.sa"
+@import "sa_std/ptr.sa"
+@import "sa_std/string.sa"
+@import "src/ast.sla"
+@import "src/value.sla"
+@import "src/strutil.sla"
+
+const CTL_NONE: i64 = 0;
+const CTL_RETURN: i64 = 1;
+const CTL_BREAK: i64 = 2;
+const CTL_GOTO: i64 = 3;
+const CTL_ERROR: i64 = 4;
+
+struct Binding {
+    name: u64,
+    val: Value,
+    cons: i64,
+}
+
+struct Env {
+    parent: i64,
+    vars: Vec<Binding>,
+    varargs: Vec<Value>,
+    vargname: u64,
+}
+
+struct Entry {
+    key: Value,
+    val: Value,
+}
+
+struct Table {
+    entries: Vec<Entry>,
+    meta: i64,
+}
+
+struct Func {
+    params: Vec<i64>,
+    body: i64,
+    vararg: i64,
+    has_self: i64,
+    env: i64,
+}
+
+struct Interp {
+    nodes: Vec<Node>,
+    lists: Vec<List>,
+    envs: Vec<Env>,
+    tables: Vec<Table>,
+    funcs: Vec<Func>,
+    globals: i64,
+    err: u64,
+    ctrl: i64,
+    retvals: Vec<Value>,
+    gotolabel: u64,
+    curline: i64,
+}
+
+fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
+    return Binding { name: name, val: val, cons: cons };
+}
+
+fn env_new(parent: i64) -> Env {
+    return Env { parent: parent, vars: Vec::new(), varargs: Vec::new(), vargname: 0 };
+}
+
+fn entry_new(key: Value, val: Value) -> Entry {
+    return Entry { key: key, val: val };
+}
+
+fn table_new() -> Table {
+    return Table { entries: Vec::new(), meta: -1 };
+}
+
+fn func_new(params: Vec<i64>, body: i64, vararg: i64, has_self: i64, env: i64) -> Func {
+    return Func { params: params, body: body, vararg: vararg, has_self: has_self, env: env };
+}
+
+fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
+    let it = Interp {
+        nodes: nodes,
+        lists: lists,
+        envs: Vec::new(),
+        tables: Vec::new(),
+        funcs: Vec::new(),
+        globals: 0,
+        err: 0,
+        ctrl: 0,
+        retvals: Vec::new(),
+        gotolabel: 0,
+        curline: 0,
+    };
+    it.globals = it.new_table();
+    return it;
+}
+
+impl Interp {
+    fn nd(&self, id: i64) -> Node {
+        return self.nodes[id];
+    }
+
+    fn list_get(&self, lid: i64, i: i64) -> i64 {
+        return self.lists[lid].items[i];
+    }
+
+    fn list_len(&self, lid: i64) -> i64 {
+        return len(self.lists[lid].items) as i64;
+    }
+
+    fn new_env(&self, parent: i64) -> i64 {
+        let id = len(self.envs) as i64;
+        self.envs.push(env_new(parent));
+        if parent >= 0 {
+            self.envs[id].vargname = self.envs[parent].vargname;
+            let i = 0;
+            while i < (len(self.envs[parent].varargs) as i64) {
+                let v = self.envs[parent].varargs[i];
+                self.envs[id].varargs.push(v);
+                i = i + 1;
+            }
+        };
+        return id;
+    }
+
+    fn new_table(&self) -> i64 {
+        let id = len(self.tables) as i64;
+        self.tables.push(table_new());
+        return id;
+    }
+
+    fn new_func(&self, params: Vec<i64>, body: i64, vararg: i64, has_self: i64, env: i64) -> i64 {
+        let id = len(self.funcs) as i64;
+        self.funcs.push(func_new(params, body, vararg, has_self, env));
+        return id;
+    }
+
+    fn env_define(&self, env: i64, name: u64, val: Value, cons: i64) -> void {
+        self.envs[env].vars.push(binding_new(name, val, cons));
+    }
+
+    fn env_find_env(&self, env: i64, name: u64) -> i64 {
+        let cur = env;
+        while cur >= 0 {
+            let vars = self.envs[cur].vars;
+            let i = (len(vars) as i64) - 1;
+            while i >= 0 {
+                if s_eq(vars[i].name, name) {
+                    return cur;
+                };
+                i = i - 1;
+            }
+            cur = self.envs[cur].parent;
+        }
+        return -1;
+    }
+
+    fn env_update(&self, env: i64, name: u64, val: Value) -> bool {
+        let vars = self.envs[env].vars;
+        let i = (len(vars) as i64) - 1;
+        while i >= 0 {
+            if s_eq(vars[i].name, name) {
+                if vars[i].cons != 0 {
+                    self.fail_str(STR_PTR("attempt to assign to const variable"), 38);
+                    return false;
+                };
+                let nv = value_new(val.tag, val.i, val.f, val.s);
+                self.envs[env].vars[i].val = nv;
+                return true;
+            };
+            i = i - 1;
+        }
+        return false;
+    }
+
+    fn env_vargname(&self, env: i64) -> u64 {
+        let cur = env;
+        while cur >= 0 {
+            if self.envs[cur].vargname != 0 {
+                return self.envs[cur].vargname;
+            };
+            cur = self.envs[cur].parent;
+        }
+        return 0;
+    }
+
+    fn env_get(&self, env: i64, name: u64) -> Value {
+        let found = self.env_find_env(env, name);
+        if found >= 0 {
+            let vars = self.envs[found].vars;
+            let i = (len(vars) as i64) - 1;
+            while i >= 0 {
+                if s_eq(vars[i].name, name) {
+                    return vars[i].val;
+                };
+                i = i - 1;
+            }
+        };
+        return self.table_get(self.globals, v_str(name));
+    }
+
+    fn env_set(&self, env: i64, name: u64, val: Value) -> void {
+        let found = self.env_find_env(env, name);
+        if found >= 0 {
+            self.env_update(found, name, val);
+            return;
+        };
+        self.table_set(self.globals, v_str(name), val);
+    }
+
+    fn table_get(&self, tid: i64, key: Value) -> Value {
+        let es = self.tables[tid].entries;
+        let i = 0;
+        while i < (len(es) as i64) {
+            if v_equal(es[i].key, key) {
+                return es[i].val;
+            };
+            i = i + 1;
+        }
+        return v_nil();
+    }
+
+    fn table_set(&self, tid: i64, key: Value, val: Value) -> void {
+        if key.tag == VT_NIL {
+            self.fail_str(STR_PTR("table index is nil"), 19);
+            return;
+        };
+        let es = self.tables[tid].entries;
+        let i = 0;
+        while i < (len(es) as i64) {
+            if v_equal(es[i].key, key) {
+                let nv = value_new(val.tag, val.i, val.f, val.s);
+                self.tables[tid].entries[i].val = nv;
+                return;
+            };
+            i = i + 1;
+        }
+        self.tables[tid].entries.push(entry_new(key, val));
+    }
+
+    fn table_get_str(&self, tid: i64, s: u64) -> Value {
+        return self.table_get(tid, v_str(s));
+    }
+
+    fn table_set_str(&self, tid: i64, s: u64, val: Value) -> void {
+        self.table_set(tid, v_str(s), val);
+    }
+
+    fn table_len(&self, tid: i64) -> i64 {
+        let n = 0;
+        let going = true;
+        while going {
+            let v = self.table_get(tid, v_int(n + 1));
+            if v.tag == VT_NIL {
+                going = false;
+                continue;
+            };
+            n = n + 1;
+        }
+        return n;
+    }
+
+    fn table_next(&self, tid: i64, key: Value) -> (Value, Value) {
+        let es = self.tables[tid].entries;
+        let start = 0;
+        if key.tag != VT_NIL {
+            let i = 0;
+            let found = 0;
+            while i < (len(es) as i64) {
+                if v_equal(es[i].key, key) {
+                    start = i + 1;
+                    found = 1;
+                    i = len(es) as i64;
+                    continue;
+                };
+                i = i + 1;
+            }
+            if found == 0 {
+                return (v_nil(), v_nil());
+            };
+        };
+        let j = start;
+        while j < (len(es) as i64) {
+            if es[j].val.tag != VT_NIL {
+                return (es[j].key, es[j].val);
+            };
+            j = j + 1;
+        }
+        return (v_nil(), v_nil());
+    }
+
+    fn fail_str(&self, msg: ptr, n: u64) -> void {
+        if self.err == 0 {
+            self.err = s_from(msg, n);
+        };
+        self.ctrl = CTL_ERROR;
+    }
+
+    fn take_returns(&self) -> Vec<Value> {
+        let out = Vec::new();
+        let i = 0;
+        while i < (len(self.retvals) as i64) {
+            out.push(self.retvals[i]);
+            i = i + 1;
+        }
+        self.retvals = Vec::new();
+        return out;
+    }
+}

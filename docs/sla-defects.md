@@ -143,3 +143,60 @@ Workaround: use `sa_fs_read_file` + `SLA_FS_BUFFER_DATA/LEN` and copy bytes with
 `s_from`. The lexer now reads all 34 Lua test files this way.
 
 Status: open (behavioural limitation, documented).
+
+## D-006 Cyclic `@import` fails when the cycle returns to the root file
+
+Reproducer: `src/probe_cyc_a.sla` / `src/probe_cyc_b.sla`
+(`a` imports `b`, `b` imports `a`, and `a` is the build root).
+
+Observed:
+
+```
+Type Check Error: failed to verify types:
+Redeclaration: function `fa` is already defined (error.Redeclaration)
+```
+
+The same cycle compiles when a third root file imports `a`: the loader detects
+the already-visited module. Only re-entering the *root* module duplicates its
+definitions.
+
+Workaround: keep import cycles below the root, or move shared definitions into
+a third module imported by both sides.
+
+Status: open.
+
+## D-007 Affine `Vec` parameter consumed on one `if` branch
+
+Reproducer: passing a `Vec` by value to a helper, consuming it in one branch of
+an `if`, and falling through to a merge point on the other branch:
+
+```
+error[PhiStateConflict]: incoming control-flow states do not agree
+  register: args
+  state: expected Active, actual Consumed
+```
+
+The diagnostic is accurate but the source pattern looks harmless because the
+consuming branch returns before the merge.
+
+Workaround: borrow the vector (`fn f(args: &Vec<T>)`, call `f(&args)`) and
+rebuild result vectors explicitly.
+
+Status: open (escape/liveness analysis).
+
+## D-008 Bitwise operators and statement terminators
+
+Not defects in the type system, but syntax that differs from C/Lua and cost
+debugging time while porting the evaluator:
+
+- `~` is not a bitwise-xor operator; use `^`. Unary complement must be written
+  as `x ^ (-1)`.
+- `&`, `|`, `^`, `<<`, `>>` are the supported integer bitwise operators.
+- A statement `if ... { }` (with or without `else`) needs a trailing `;` when
+  another statement follows it. Blocks for `while`/`for`/function bodies do not.
+- Float literals do not accept exponent suffixes such as `1.0e308`; construct
+  large constants with `sa_math_pow`.
+
+Reproducers: the interpreter sources (`src/interp_expr.sla`).
+
+Status: documented behaviour.

@@ -1,0 +1,624 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/math.sai"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_expr.sla"
+
+const B_PRINT: i64 = 1;
+const B_TYPE: i64 = 2;
+const B_TOSTRING: i64 = 3;
+const B_TONUMBER: i64 = 4;
+const B_ASSERT: i64 = 5;
+const B_ERROR: i64 = 6;
+const B_PCALL: i64 = 7;
+const B_PAIRS: i64 = 8;
+const B_IPAIRS: i64 = 9;
+const B_NEXT: i64 = 10;
+const B_INEXT: i64 = 11;
+const B_SELECT: i64 = 12;
+const B_RAWGET: i64 = 13;
+const B_RAWSET: i64 = 14;
+const B_RAWEQUAL: i64 = 15;
+const B_GETMETA: i64 = 16;
+const B_SETMETA: i64 = 17;
+const B_S_LEN: i64 = 20;
+const B_S_SUB: i64 = 21;
+const B_S_UPPER: i64 = 22;
+const B_S_LOWER: i64 = 23;
+const B_S_BYTE: i64 = 24;
+const B_S_CHAR: i64 = 25;
+const B_S_REP: i64 = 26;
+const B_S_REVERSE: i64 = 27;
+const B_S_FORMAT: i64 = 28;
+const B_T_INSERT: i64 = 40;
+const B_T_REMOVE: i64 = 41;
+const B_T_CONCAT: i64 = 42;
+const B_T_PACK: i64 = 43;
+const B_T_UNPACK: i64 = 44;
+const B_M_FLOOR: i64 = 60;
+const B_M_CEIL: i64 = 61;
+const B_M_ABS: i64 = 62;
+const B_M_MAX: i64 = 63;
+const B_M_MIN: i64 = 64;
+const B_M_SQRT: i64 = 65;
+const B_M_TYPE: i64 = 66;
+const B_M_TOINT: i64 = 67;
+const B_OS_CLOCK: i64 = 80;
+const B_OS_TIME: i64 = 81;
+
+fn bs_one(v: Value) -> Vec<Value> {
+    let out = Vec::new();
+    out.push(v);
+    return out;
+}
+
+fn bs_rest(args: &Vec<Value>, from: i64) -> Vec<Value> {
+    let out = Vec::new();
+    let i = from;
+    while i < (len(args) as i64) {
+        out.push(args[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn bs_copy(args: &Vec<Value>) -> Vec<Value> {
+    return bs_rest(args, 0);
+}
+
+fn bs_str(p: ptr, n: u64) -> u64 {
+    return s_from(p, n);
+}
+
+fn bs_arg(args: &Vec<Value>, i: i64) -> Value {
+    if i < (len(args) as i64) {
+        return args[i];
+    };
+    return v_nil();
+}
+
+fn bs_pos(p: i64, n: i64) -> i64 {
+    if p < 0 {
+        return n + p + 1;
+    };
+    return p;
+}
+
+impl Interp {
+    fn init_globals(&self) -> void {
+        self.table_set_str(self.globals, bs_str(STR_PTR("print"), 5), v_builtin(B_PRINT));
+        self.table_set_str(self.globals, bs_str(STR_PTR("type"), 4), v_builtin(B_TYPE));
+        self.table_set_str(self.globals, bs_str(STR_PTR("tostring"), 8), v_builtin(B_TOSTRING));
+        self.table_set_str(self.globals, bs_str(STR_PTR("tonumber"), 8), v_builtin(B_TONUMBER));
+        self.table_set_str(self.globals, bs_str(STR_PTR("assert"), 6), v_builtin(B_ASSERT));
+        self.table_set_str(self.globals, bs_str(STR_PTR("error"), 5), v_builtin(B_ERROR));
+        self.table_set_str(self.globals, bs_str(STR_PTR("pcall"), 5), v_builtin(B_PCALL));
+        self.table_set_str(self.globals, bs_str(STR_PTR("pairs"), 5), v_builtin(B_PAIRS));
+        self.table_set_str(self.globals, bs_str(STR_PTR("ipairs"), 6), v_builtin(B_IPAIRS));
+        self.table_set_str(self.globals, bs_str(STR_PTR("next"), 4), v_builtin(B_NEXT));
+        self.table_set_str(self.globals, bs_str(STR_PTR("select"), 6), v_builtin(B_SELECT));
+        self.table_set_str(self.globals, bs_str(STR_PTR("rawget"), 6), v_builtin(B_RAWGET));
+        self.table_set_str(self.globals, bs_str(STR_PTR("rawset"), 6), v_builtin(B_RAWSET));
+        self.table_set_str(self.globals, bs_str(STR_PTR("rawequal"), 8), v_builtin(B_RAWEQUAL));
+        self.table_set_str(self.globals, bs_str(STR_PTR("getmetatable"), 12), v_builtin(B_GETMETA));
+        self.table_set_str(self.globals, bs_str(STR_PTR("setmetatable"), 12), v_builtin(B_SETMETA));
+        self.table_set_str(self.globals, bs_str(STR_PTR("_G"), 2), v_table(self.globals));
+        self.table_set_str(self.globals, bs_str(STR_PTR("_VERSION"), 8), v_str(bs_str(STR_PTR("Lua 5.5"), 7)));
+        let st = self.new_table();
+        self.table_set_str(st, bs_str(STR_PTR("len"), 3), v_builtin(B_S_LEN));
+        self.table_set_str(st, bs_str(STR_PTR("sub"), 3), v_builtin(B_S_SUB));
+        self.table_set_str(st, bs_str(STR_PTR("upper"), 5), v_builtin(B_S_UPPER));
+        self.table_set_str(st, bs_str(STR_PTR("lower"), 5), v_builtin(B_S_LOWER));
+        self.table_set_str(st, bs_str(STR_PTR("byte"), 4), v_builtin(B_S_BYTE));
+        self.table_set_str(st, bs_str(STR_PTR("char"), 4), v_builtin(B_S_CHAR));
+        self.table_set_str(st, bs_str(STR_PTR("rep"), 3), v_builtin(B_S_REP));
+        self.table_set_str(st, bs_str(STR_PTR("reverse"), 7), v_builtin(B_S_REVERSE));
+        self.table_set_str(st, bs_str(STR_PTR("format"), 6), v_builtin(B_S_FORMAT));
+        self.table_set_str(self.globals, bs_str(STR_PTR("string"), 6), v_table(st));
+        let tt = self.new_table();
+        self.table_set_str(tt, bs_str(STR_PTR("insert"), 6), v_builtin(B_T_INSERT));
+        self.table_set_str(tt, bs_str(STR_PTR("remove"), 6), v_builtin(B_T_REMOVE));
+        self.table_set_str(tt, bs_str(STR_PTR("concat"), 6), v_builtin(B_T_CONCAT));
+        self.table_set_str(tt, bs_str(STR_PTR("pack"), 4), v_builtin(B_T_PACK));
+        self.table_set_str(tt, bs_str(STR_PTR("unpack"), 6), v_builtin(B_T_UNPACK));
+        self.table_set_str(self.globals, bs_str(STR_PTR("table"), 5), v_table(tt));
+        let mt = self.new_table();
+        self.table_set_str(mt, bs_str(STR_PTR("floor"), 5), v_builtin(B_M_FLOOR));
+        self.table_set_str(mt, bs_str(STR_PTR("ceil"), 4), v_builtin(B_M_CEIL));
+        self.table_set_str(mt, bs_str(STR_PTR("abs"), 3), v_builtin(B_M_ABS));
+        self.table_set_str(mt, bs_str(STR_PTR("max"), 3), v_builtin(B_M_MAX));
+        self.table_set_str(mt, bs_str(STR_PTR("min"), 3), v_builtin(B_M_MIN));
+        self.table_set_str(mt, bs_str(STR_PTR("sqrt"), 4), v_builtin(B_M_SQRT));
+        self.table_set_str(mt, bs_str(STR_PTR("type"), 4), v_builtin(B_M_TYPE));
+        self.table_set_str(mt, bs_str(STR_PTR("tointeger"), 9), v_builtin(B_M_TOINT));
+        self.table_set_str(mt, bs_str(STR_PTR("pi"), 2), v_num(3.141592653589793));
+        self.table_set_str(mt, bs_str(STR_PTR("huge"), 4), v_num(sa_math_pow(2.0, 1024.0)));
+        self.table_set_str(mt, bs_str(STR_PTR("maxinteger"), 10), v_int(9223372036854775807));
+        self.table_set_str(mt, bs_str(STR_PTR("mininteger"), 10), v_int(-9223372036854775807 - 1));
+        self.table_set_str(self.globals, bs_str(STR_PTR("math"), 4), v_table(mt));
+        let ot = self.new_table();
+        self.table_set_str(ot, bs_str(STR_PTR("clock"), 5), v_builtin(B_OS_CLOCK));
+        self.table_set_str(ot, bs_str(STR_PTR("time"), 4), v_builtin(B_OS_TIME));
+        self.table_set_str(self.globals, bs_str(STR_PTR("os"), 2), v_table(ot));
+    }
+
+    fn builtin_call(&self, id: i64, args: Vec<Value>) -> Vec<Value> {
+        if id == B_PRINT {
+            let i = 0;
+            while i < (len(args) as i64) {
+                if i > 0 {
+                    s_write(bs_str(STR_PTR(" "), 1));
+                };
+                s_write(v_to_string(args[i]));
+                i = i + 1;
+            }
+            s_nl();
+            return Vec::new();
+        };
+        if id == B_TYPE {
+            return bs_one(v_str(v_type_name(bs_arg(&args, 0))));
+        };
+        if id == B_TOSTRING {
+            return bs_one(v_str(v_to_string(bs_arg(&args, 0))));
+        };
+        if id == B_TONUMBER {
+            return bs_one(self.bi_tonumber(bs_arg(&args, 0)));
+        };
+        if id == B_ASSERT {
+            let a = bs_arg(&args, 0);
+            if v_truthy(a) {
+                return bs_copy(&args);
+            };
+            let m = v_str(bs_str(STR_PTR("assertion failed!"), 16));
+            if len(args) > 1 {
+                m = bs_arg(&args, 1);
+            };
+            self.err = v_to_string(m);
+            self.ctrl = CTL_ERROR;
+            return Vec::new();
+        };
+        if id == B_ERROR {
+            let m = bs_arg(&args, 0);
+            self.err = v_to_string(m);
+            self.ctrl = CTL_ERROR;
+            return Vec::new();
+        };
+        if id == B_PCALL {
+            let f = bs_arg(&args, 0);
+            let rest = bs_rest(&args, 1);
+            self.err = 0;
+            self.ctrl = CTL_NONE;
+            let out = self.call_value(f, rest);
+            if self.err != 0 {
+                let msg = self.err;
+                self.err = 0;
+                self.ctrl = CTL_NONE;
+                let r = Vec::new();
+                r.push(v_bool(false));
+                r.push(v_str(msg));
+                return r;
+            };
+            let r = Vec::new();
+            r.push(v_bool(true));
+            let i = 0;
+            while i < (len(out) as i64) {
+                r.push(out[i]);
+                i = i + 1;
+            }
+            return r;
+        };
+        if id == B_PAIRS {
+            let t = bs_arg(&args, 0);
+            let r = Vec::new();
+            r.push(v_builtin(B_NEXT));
+            r.push(t);
+            r.push(v_nil());
+            return r;
+        };
+        if id == B_IPAIRS {
+            let t = bs_arg(&args, 0);
+            let r = Vec::new();
+            r.push(v_builtin(B_INEXT));
+            r.push(t);
+            r.push(v_int(0));
+            return r;
+        };
+        if id == B_NEXT {
+            let t = bs_arg(&args, 0);
+            let k = bs_arg(&args, 1);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument to 'next'"), 23);
+                return Vec::new();
+            };
+            let (k2, v2) = self.table_next(t.i, k);
+            let r = Vec::new();
+            r.push(k2);
+            r.push(v2);
+            return r;
+        };
+        if id == B_INEXT {
+            let t = bs_arg(&args, 0);
+            let k = bs_arg(&args, 1);
+            let n = 0;
+            if k.tag == VT_INT {
+                n = k.i;
+            };
+            n = n + 1;
+            let v = self.table_get(t.i, v_int(n));
+            if v.tag == VT_NIL {
+                return Vec::new();
+            };
+            let r = Vec::new();
+            r.push(v_int(n));
+            r.push(v);
+            return r;
+        };
+        if id == B_SELECT {
+            let k = bs_arg(&args, 0);
+            if k.tag == VT_STR && s_eq_lit(k.s, STR_PTR("#"), 1) {
+                return bs_one(v_int((len(args) as i64) - 1));
+            };
+            let n = 1;
+            if k.tag == VT_INT {
+                n = k.i;
+            };
+            if n < 0 {
+                n = (len(args) as i64) + n;
+            };
+            if n < 1 {
+                n = 1;
+            };
+            return bs_rest(&args, n);
+        };
+        if id == B_RAWGET {
+            let t = bs_arg(&args, 0);
+            return bs_one(self.table_get(t.i, bs_arg(&args, 1)));
+        };
+        if id == B_RAWSET {
+            let t = bs_arg(&args, 0);
+            self.table_set(t.i, bs_arg(&args, 1), bs_arg(&args, 2));
+            return bs_one(t);
+        };
+        if id == B_RAWEQUAL {
+            return bs_one(v_bool(v_equal(bs_arg(&args, 0), bs_arg(&args, 1))));
+        };
+        if id == B_GETMETA {
+            let t = bs_arg(&args, 0);
+            if t.tag == VT_TABLE && self.tables[t.i].meta >= 0 {
+                return bs_one(v_table(self.tables[t.i].meta));
+            };
+            return bs_one(v_nil());
+        };
+        if id == B_SETMETA {
+            let t = bs_arg(&args, 0);
+            let m = bs_arg(&args, 1);
+            if t.tag == VT_TABLE {
+                if m.tag == VT_TABLE {
+                    self.tables[t.i].meta = m.i;
+                } else {
+                    self.tables[t.i].meta = -1;
+                };
+            };
+            return bs_one(t);
+        };
+        if id == B_S_LEN {
+            return bs_one(v_int(s_len(v_to_string(bs_arg(&args, 0))) as i64));
+        };
+        if id == B_S_SUB {
+            let s = v_to_string(bs_arg(&args, 0));
+            let n = s_len(s) as i64;
+            let i0 = bs_pos(self.bi_int(bs_arg(&args, 1), 1), n);
+            let i1 = n;
+            if len(args) > 2 {
+                i1 = bs_pos(self.bi_int(bs_arg(&args, 2), n), n);
+            };
+            if i0 < 1 { i0 = 1; };
+            if i1 > n { i1 = n; };
+            if i0 > i1 { return bs_one(v_str(bs_str(STR_PTR(""), 0))); };
+            return bs_one(v_str(s_slice(s, (i0 - 1) as u64, (i1 - i0 + 1) as u64)));
+        };
+        if id == B_S_UPPER {
+            return bs_one(v_str(self.bi_case(v_to_string(bs_arg(&args, 0)), 0)));
+        };
+        if id == B_S_LOWER {
+            return bs_one(v_str(self.bi_case(v_to_string(bs_arg(&args, 0)), 1)));
+        };
+        if id == B_S_BYTE {
+            let s = v_to_string(bs_arg(&args, 0));
+            let n = s_len(s) as i64;
+            let i0 = 1;
+            if len(args) > 1 { i0 = bs_pos(self.bi_int(bs_arg(&args, 1), 1), n); };
+            let i1 = i0;
+            if len(args) > 2 { i1 = bs_pos(self.bi_int(bs_arg(&args, 2), i0), n); };
+            let r = Vec::new();
+            let i = i0;
+            while i <= i1 && i <= n {
+                if i >= 1 {
+                    r.push(v_int(s_byte(s, (i - 1) as u64) as i64));
+                };
+                i = i + 1;
+            }
+            return r;
+        };
+        if id == B_S_CHAR {
+            let out = bs_str(STR_PTR(""), 0);
+            let i = 0;
+            while i < (len(args) as i64) {
+                out = s_cat(out, s_char(self.bi_int(args[i], 0) as u8));
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_REP {
+            let s = v_to_string(bs_arg(&args, 0));
+            let n = self.bi_int(bs_arg(&args, 1), 0);
+            let sep = bs_str(STR_PTR(""), 0);
+            if len(args) > 2 { sep = v_to_string(bs_arg(&args, 2)); };
+            let out = bs_str(STR_PTR(""), 0);
+            let i: i64 = 0;
+            while i < n {
+                if i > 0 { out = s_cat(out, sep); };
+                out = s_cat(out, s);
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_REVERSE {
+            let s = v_to_string(bs_arg(&args, 0));
+            let n = s_len(s);
+            let out = bs_str(STR_PTR(""), 0);
+            let i = n;
+            while i > 0 {
+                out = s_cat(out, s_char(s_byte(s, i - 1)));
+                i = i - 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_FORMAT {
+            return bs_one(v_str(self.bi_format(args)));
+        };
+        if id == B_T_INSERT {
+            let t = bs_arg(&args, 0);
+            let n = self.table_len(t.i);
+            let pos = n + 1;
+            let v = v_nil();
+            if len(args) == 2 {
+                v = args[1];
+            } else {
+                pos = self.bi_int(bs_arg(&args, 1), n + 1);
+                v = bs_arg(&args, 2);
+            };
+            let i = n;
+            while i >= pos {
+                self.table_set(t.i, v_int(i + 1), self.table_get(t.i, v_int(i)));
+                i = i - 1;
+            }
+            self.table_set(t.i, v_int(pos), v);
+            return Vec::new();
+        };
+        if id == B_T_REMOVE {
+            let t = bs_arg(&args, 0);
+            let n = self.table_len(t.i);
+            let pos = n;
+            if len(args) > 1 { pos = self.bi_int(bs_arg(&args, 1), n); };
+            let v = self.table_get(t.i, v_int(pos));
+            let i = pos;
+            while i < n {
+                self.table_set(t.i, v_int(i), self.table_get(t.i, v_int(i + 1)));
+                i = i + 1;
+            }
+            self.table_set(t.i, v_int(n), v_nil());
+            return bs_one(v);
+        };
+        if id == B_T_CONCAT {
+            let t = bs_arg(&args, 0);
+            let sep = bs_str(STR_PTR(""), 0);
+            if len(args) > 1 { sep = v_to_string(args[1]); };
+            let n = self.table_len(t.i);
+            let i0 = 1;
+            let i1 = n;
+            if len(args) > 2 { i0 = self.bi_int(args[2], 1); };
+            if len(args) > 3 { i1 = self.bi_int(args[3], n); };
+            let out = bs_str(STR_PTR(""), 0);
+            let i = i0;
+            while i <= i1 {
+                if i > i0 { out = s_cat(out, sep); };
+                out = s_cat(out, v_to_string(self.table_get(t.i, v_int(i))));
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_T_PACK {
+            let t = self.new_table();
+            let i = 0;
+            while i < (len(args) as i64) {
+                self.table_set(t, v_int(i + 1), args[i]);
+                i = i + 1;
+            }
+            self.table_set_str(t, bs_str(STR_PTR("n"), 1), v_int(len(args) as i64));
+            return bs_one(v_table(t));
+        };
+        if id == B_T_UNPACK {
+            let t = bs_arg(&args, 0);
+            let i0 = 1;
+            let i1 = self.table_len(t.i);
+            if len(args) > 1 { i0 = self.bi_int(args[1], 1); };
+            if len(args) > 2 { i1 = self.bi_int(args[2], i1); };
+            let r = Vec::new();
+            let i = i0;
+            while i <= i1 {
+                r.push(self.table_get(t.i, v_int(i)));
+                i = i + 1;
+            }
+            return r;
+        };
+        if id == B_M_FLOOR {
+            return bs_one(v_int(sa_math_floor(v_as_num(bs_arg(&args, 0))) as i64));
+        };
+        if id == B_M_CEIL {
+            return bs_one(v_int(sa_math_ceil(v_as_num(bs_arg(&args, 0))) as i64));
+        };
+        if id == B_M_ABS {
+            let v = bs_arg(&args, 0);
+            if v.tag == VT_INT {
+                if v.i < 0 {
+                    return bs_one(v_int(0 - v.i));
+                };
+                return bs_one(v);
+            };
+            let f = v_as_num(v);
+            if f < 0.0 { f = 0.0 - f; };
+            return bs_one(v_num(f));
+        };
+        if id == B_M_MAX || id == B_M_MIN {
+            let best = bs_arg(&args, 0);
+            let i = 1;
+            while i < (len(args) as i64) {
+                let v = args[i];
+                let better = v_as_num(v) > v_as_num(best);
+                if id == B_M_MIN { better = v_as_num(v) < v_as_num(best); };
+                if better { best = v; };
+                i = i + 1;
+            }
+            return bs_one(best);
+        };
+        if id == B_M_SQRT {
+            return bs_one(v_num(sa_math_sqrt(v_as_num(bs_arg(&args, 0)))));
+        };
+        if id == B_M_TYPE {
+            let v = bs_arg(&args, 0);
+            if v.tag == VT_INT { return bs_one(v_str(bs_str(STR_PTR("integer"), 7))); };
+            if v.tag == VT_NUM { return bs_one(v_str(bs_str(STR_PTR("float"), 5))); };
+            return bs_one(v_nil());
+        };
+        if id == B_M_TOINT {
+            let v = bs_arg(&args, 0);
+            if v.tag == VT_INT { return bs_one(v); };
+            if v.tag == VT_NUM && v_is_integral(v) {
+                return bs_one(v_int(v.f as i64));
+            };
+            return bs_one(v_nil());
+        };
+        if id == B_OS_CLOCK {
+            return bs_one(v_num(0.0));
+        };
+        if id == B_OS_TIME {
+            return bs_one(v_int(0));
+        };
+        return Vec::new();
+    }
+
+    fn bi_int(&self, v: Value, d: i64) -> i64 {
+        if v.tag == VT_INT {
+            return v.i;
+        };
+        if v.tag == VT_NUM {
+            return v.f as i64;
+        };
+        return d;
+    }
+
+    fn bi_tonumber(&self, v: Value) -> Value {
+        if v_is_number(v) {
+            return v;
+        };
+        if v.tag != VT_STR {
+            return v_nil();
+        };
+        let n = s_len(v.s);
+        if n == 0 {
+            return v_nil();
+        };
+        let i: u64 = 0;
+        let neg = false;
+        if s_byte(v.s, 0) == 45 {
+            neg = true;
+            i = 1;
+        };
+        let val: i64 = 0;
+        let digits = 0;
+        while i < n {
+            let c = s_byte(v.s, i);
+            if c < 48 || c > 57 {
+                return v_num(SLA_PARSE_F64(v.s));
+            };
+            val = val * 10 + (c as i64) - 48;
+            digits = digits + 1;
+            i = i + 1;
+        }
+        if digits == 0 {
+            return v_nil();
+        };
+        if neg {
+            return v_int(0 - val);
+        };
+        return v_int(val);
+    }
+
+    fn bi_case(&self, s: u64, lower: i64) -> u64 {
+        let n = s_len(s);
+        let out = bs_str(STR_PTR(""), 0);
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(s, i);
+            let d = c;
+            if lower == 1 {
+                if c >= 65 && c <= 90 { d = c + 32; };
+            } else {
+                if c >= 97 && c <= 122 { d = c - 32; };
+            };
+            out = s_cat(out, s_char(d));
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn bi_format(&self, args: Vec<Value>) -> u64 {
+        let f = v_to_string(bs_arg(&args, 0));
+        let n = s_len(f);
+        let out = bs_str(STR_PTR(""), 0);
+        let ai = 1;
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(f, i);
+            if c != 37 {
+                out = s_cat(out, s_char(c));
+                i = i + 1;
+                continue;
+            };
+            i = i + 1;
+            if i >= n {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let k = s_byte(f, i);
+            i = i + 1;
+            if k == 37 {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let v = bs_arg(&args, ai);
+            ai = ai + 1;
+            if k == 115 {
+                out = s_cat(out, v_to_string(v));
+            } else {
+                if k == 100 || k == 105 {
+                    out = s_cat(out, s_i64(self.bi_int(v, 0)));
+                } else {
+                    if k == 102 || k == 103 {
+                        out = s_cat(out, s_f64(v_as_num(v)));
+                    } else {
+                        if k == 99 {
+                            out = s_cat(out, s_char(self.bi_int(v, 0) as u8));
+                        } else {
+                            out = s_cat(out, v_to_string(v));
+                        }
+                    }
+                }
+            }
+        }
+        return out;
+    }
+}

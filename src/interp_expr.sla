@@ -1,0 +1,558 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/math.sai"
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_stmt.sla"
+@import "src/builtins.sla"
+
+fn v_is_integral(v: Value) -> bool {
+    if v.tag == VT_INT {
+        return true;
+    };
+    if v.tag == VT_NUM {
+        return v.f == ((v.f as i64) as f64);
+    };
+    return false;
+}
+
+fn v_to_i64(v: Value) -> i64 {
+    if v.tag == VT_INT {
+        return v.i;
+    };
+    return v.f as i64;
+}
+
+fn s_cmp(a: u64, b: u64) -> i64 {
+    let an = s_len(a);
+    let bn = s_len(b);
+    let n = an;
+    if bn < n {
+        n = bn;
+    };
+    let i: u64 = 0;
+    while i < n {
+        let ca = s_byte(a, i);
+        let cb = s_byte(b, i);
+        if ca < cb {
+            return -1;
+        };
+        if ca > cb {
+            return 1;
+        };
+        i = i + 1;
+    }
+    if an < bn {
+        return -1;
+    };
+    if an > bn {
+        return 1;
+    };
+    return 0;
+}
+
+impl Interp {
+    fn eval(&self, env: i64, id: i64) -> Value {
+        let nd = self.nd(id);
+        if nd.kind == NK_NIL {
+            return v_nil();
+        };
+        if nd.kind == NK_TRUE {
+            return v_bool(true);
+        };
+        if nd.kind == NK_FALSE {
+            return v_bool(false);
+        };
+        if nd.kind == NK_INT {
+            return v_int(nd.n);
+        };
+        if nd.kind == NK_NUM {
+            return v_num(nd.f);
+        };
+        if nd.kind == NK_STR {
+            return v_str(nd.s);
+        };
+        if nd.kind == NK_NAME {
+            return self.env_get(env, nd.s);
+        };
+        if nd.kind == NK_VARARG {
+            let vn = self.env_vargname(env);
+            if vn != 0 {
+                let t = self.env_get(env, vn);
+                if t.tag == VT_TABLE {
+                    return self.table_get(t.i, v_int(1));
+                };
+                return v_nil();
+            };
+            if len(self.envs[env].varargs) > 0 {
+                return self.envs[env].varargs[0];
+            };
+            return v_nil();
+        };
+        if nd.kind == NK_PAREN {
+            return self.eval(env, nd.a);
+        };
+        if nd.kind == NK_INDEX {
+            let obj = self.eval(env, nd.a);
+            let key = v_str(nd.s);
+            if nd.b != 0 {
+                key = self.eval(env, nd.b);
+            };
+            return self.get_index(obj, key);
+        };
+        if nd.kind == NK_CALL || nd.kind == NK_METHOD {
+            let out = self.eval_call(env, id);
+            if len(out) > 0 {
+                return out[0];
+            };
+            return v_nil();
+        };
+        if nd.kind == NK_FUNC {
+            return v_func(self.make_func(env, id));
+        };
+        if nd.kind == NK_TABLE {
+            return self.make_table(env, id);
+        };
+        if nd.kind == NK_BIN {
+            return self.eval_bin(env, nd);
+        };
+        if nd.kind == NK_UN {
+            return self.eval_un(env, nd);
+        };
+        return v_nil();
+    }
+
+    fn eval_call(&self, env: i64, id: i64) -> Vec<Value> {
+        let nd = self.nd(id);
+        if nd.kind == NK_CALL {
+            let f = self.eval(env, nd.a);
+            let args = self.eval_list(env, nd.b);
+            return self.call_value(f, args);
+        };
+        let obj = self.eval(env, nd.a);
+        let f = self.get_index(obj, v_str(nd.s));
+        let args = self.eval_list(env, nd.b);
+        let all = Vec::new();
+        all.push(obj);
+        let i = 0;
+        while i < (len(args) as i64) {
+            all.push(args[i]);
+            i = i + 1;
+        }
+        return self.call_value(f, all);
+    }
+
+    fn eval_multi(&self, env: i64, id: i64) -> Vec<Value> {
+        let out = Vec::new();
+        let nd = self.nd(id);
+        if nd.kind == NK_CALL || nd.kind == NK_METHOD {
+            return self.eval_call(env, id);
+        };
+        if nd.kind == NK_VARARG {
+            let vn = self.env_vargname(env);
+            if vn != 0 {
+                let t = self.env_get(env, vn);
+                if t.tag != VT_TABLE {
+                    return out;
+                };
+                let cnt = self.table_get_str(t.i, s_from(STR_PTR("n"), 1));
+                let nv = 0;
+                if cnt.tag == VT_INT {
+                    nv = cnt.i;
+                };
+                let i = 1;
+                while i <= nv {
+                    out.push(self.table_get(t.i, v_int(i)));
+                    i = i + 1;
+                }
+                return out;
+            };
+            let i = 0;
+            while i < (len(self.envs[env].varargs) as i64) {
+                out.push(self.envs[env].varargs[i]);
+                i = i + 1;
+            }
+            return out;
+        };
+        out.push(self.eval(env, id));
+        return out;
+    }
+
+    fn eval_list(&self, env: i64, lid: i64) -> Vec<Value> {
+        let out = Vec::new();
+        let n = self.list_len(lid);
+        let i = 0;
+        while i < n {
+            let vals = self.eval_multi(env, self.list_get(lid, i));
+            if i == n - 1 {
+                let j = 0;
+                while j < (len(vals) as i64) {
+                    out.push(vals[j]);
+                    j = j + 1;
+                }
+            } else {
+                if len(vals) > 0 {
+                    out.push(vals[0]);
+                } else {
+                    out.push(v_nil());
+                }
+            };
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn make_func(&self, env: i64, id: i64) -> i64 {
+        let nd = self.nd(id);
+        let ps = Vec::new();
+        let n = self.list_len(nd.a);
+        let i = 0;
+        while i < n {
+            ps.push(self.list_get(nd.a, i));
+            i = i + 1;
+        }
+        return self.new_func(ps, nd.b, nd.n, nd.d, env);
+    }
+
+    fn make_table(&self, env: i64, id: i64) -> Value {
+        let nd = self.nd(id);
+        let tid = self.new_table();
+        let n = self.list_len(nd.a);
+        let i = 0;
+        let seq = 1;
+        while i < n {
+            let fid = self.list_get(nd.a, i);
+            let f = self.nd(fid);
+            let key = v_nil();
+            let val = v_nil();
+            if f.n == 1 {
+                key = self.eval(env, f.a);
+                val = self.eval(env, f.b);
+            };
+            if f.n == 2 {
+                key = v_str(f.s);
+                val = self.eval(env, f.b);
+            };
+            if f.n == 0 {
+                let expand = false;
+                if i == n - 1 {
+                    let ex = self.nd(f.b);
+                    if ex.kind == NK_VARARG || ex.kind == NK_CALL || ex.kind == NK_METHOD {
+                        expand = true;
+                    };
+                };
+                if expand {
+                    let vals = self.eval_multi(env, f.b);
+                    let j = 0;
+                    while j < (len(vals) as i64) {
+                        self.table_set(tid, v_int(seq), vals[j]);
+                        seq = seq + 1;
+                        j = j + 1;
+                    }
+                    i = i + 1;
+                    continue;
+                };
+                val = self.eval(env, f.b);
+                key = v_int(seq);
+                seq = seq + 1;
+            };
+            self.table_set(tid, key, val);
+            i = i + 1;
+        }
+        return v_table(tid);
+    }
+
+    fn get_index(&self, obj: Value, key: Value) -> Value {
+        if obj.tag == VT_TABLE {
+            let v = self.table_get(obj.i, key);
+            if v.tag != VT_NIL {
+                return v;
+            };
+            let meta = self.tables[obj.i].meta;
+            if meta >= 0 {
+                let idx = self.table_get_str(meta, s_from(STR_PTR("__index"), 7));
+                if idx.tag == VT_TABLE {
+                    return self.table_get(idx.i, key);
+                };
+                if idx.tag == VT_FUNC || idx.tag == VT_BUILTIN {
+                    let out = self.call_value(idx, self.one_arg(obj, obj));
+                    if len(out) > 0 {
+                        return out[0];
+                    };
+                };
+            };
+            return v_nil();
+        };
+        if obj.tag == VT_STR {
+            let st = self.table_get_str(self.globals, s_from(STR_PTR("string"), 6));
+            if st.tag == VT_TABLE {
+                return self.table_get(st.i, key);
+            };
+        };
+        return v_nil();
+    }
+
+    fn one_arg(&self, a: Value, b: Value) -> Vec<Value> {
+        let out = Vec::new();
+        out.push(a);
+        return out;
+    }
+
+    fn set_index(&self, obj: Value, key: Value, val: Value) -> void {
+        if obj.tag == VT_TABLE {
+            self.table_set(obj.i, key, val);
+            return;
+        };
+        self.fail_str(STR_PTR("attempt to index a non-table value"), 34);
+    }
+
+    fn num_bin(&self, op: i64, a: Value, b: Value) -> Value {
+        if v_is_number(a) == false || v_is_number(b) == false {
+            self.fail_str(STR_PTR("attempt to perform arithmetic on a non-number value"), 51);
+            return v_nil();
+        };
+        let both = a.tag == VT_INT && b.tag == VT_INT;
+        if op == TK_ADD {
+            if both {
+                return v_int(a.i + b.i);
+            };
+            return v_num(v_as_num(a) + v_as_num(b));
+        };
+        if op == TK_SUB {
+            if both {
+                return v_int(a.i - b.i);
+            };
+            return v_num(v_as_num(a) - v_as_num(b));
+        };
+        if op == TK_MUL {
+            if both {
+                return v_int(a.i * b.i);
+            };
+            return v_num(v_as_num(a) * v_as_num(b));
+        };
+        if op == TK_DIV {
+            let d = v_as_num(b);
+            if d == 0.0 {
+                self.fail_str(STR_PTR("attempt to divide by zero"), 26);
+                return v_nil();
+            };
+            return v_num(v_as_num(a) / d);
+        };
+        if op == TK_IDIV {
+            if both {
+                if b.i == 0 {
+                    self.fail_str(STR_PTR("attempt to divide by zero"), 26);
+                    return v_nil();
+                };
+                let q = a.i / b.i;
+                let r = a.i % b.i;
+                if r != 0 && ((r < 0) != (b.i < 0)) {
+                    q = q - 1;
+                };
+                return v_int(q);
+            };
+            let d = v_as_num(b);
+            if d == 0.0 {
+                self.fail_str(STR_PTR("attempt to divide by zero"), 26);
+                return v_nil();
+            };
+            return v_num(sa_math_floor(v_as_num(a) / d));
+        };
+        if op == TK_MOD {
+            if both {
+                if b.i == 0 {
+                    self.fail_str(STR_PTR("attempt to perform modulo by zero"), 33);
+                    return v_nil();
+                };
+                let r = a.i % b.i;
+                if r != 0 && ((r < 0) != (b.i < 0)) {
+                    r = r + b.i;
+                };
+                return v_int(r);
+            };
+            let d = v_as_num(b);
+            if d == 0.0 {
+                self.fail_str(STR_PTR("attempt to perform modulo by zero"), 33);
+                return v_nil();
+            };
+            let r = v_as_num(a) - sa_math_floor(v_as_num(a) / d) * d;
+            return v_num(r);
+        };
+        if op == TK_POW {
+            return v_num(sa_math_pow(v_as_num(a), v_as_num(b)));
+        };
+        if op == TK_AMP {
+            return v_int(v_to_i64(a) & v_to_i64(b));
+        };
+        if op == TK_PIPE {
+            return v_int(v_to_i64(a) | v_to_i64(b));
+        };
+        if op == TK_TILDE {
+            return v_int(v_to_i64(a) ^ v_to_i64(b));
+        };
+        if op == TK_SHL {
+            return v_int(v_to_i64(a) << v_to_i64(b));
+        };
+        if op == TK_SHR {
+            return v_int(v_to_i64(a) >> v_to_i64(b));
+        };
+        return v_nil();
+    }
+
+    fn eval_bin(&self, env: i64, nd: Node) -> Value {
+        if nd.n == KW_AND {
+            let a = self.eval(env, nd.a);
+            if v_truthy(a) == false {
+                return a;
+            };
+            return self.eval(env, nd.b);
+        };
+        if nd.n == KW_OR {
+            let a = self.eval(env, nd.a);
+            if v_truthy(a) {
+                return a;
+            };
+            return self.eval(env, nd.b);
+        };
+        let a = self.eval(env, nd.a);
+        let b = self.eval(env, nd.b);
+        if nd.n == TK_CONCAT {
+            return v_str(s_cat(v_to_string(a), v_to_string(b)));
+        };
+        if nd.n == TK_EQ {
+            return v_bool(v_equal(a, b));
+        };
+        if nd.n == TK_NE {
+            return v_bool(v_equal(a, b) == false);
+        };
+        if nd.n == TK_LT || nd.n == TK_LE || nd.n == TK_GT || nd.n == TK_GE {
+            let c = 0;
+            if a.tag == VT_STR && b.tag == VT_STR {
+                c = s_cmp(a.s, b.s);
+            } else {
+                if v_is_number(a) && v_is_number(b) {
+                    if v_as_num(a) < v_as_num(b) {
+                        c = -1;
+                    } else {
+                        if v_as_num(a) > v_as_num(b) {
+                            c = 1;
+                        };
+                    }
+                } else {
+                    self.fail_str(STR_PTR("attempt to compare values"), 26);
+                    return v_nil();
+                }
+            };
+            if nd.n == TK_LT {
+                return v_bool(c < 0);
+            };
+            if nd.n == TK_LE {
+                return v_bool(c <= 0);
+            };
+            if nd.n == TK_GT {
+                return v_bool(c > 0);
+            };
+            return v_bool(c >= 0);
+        };
+        return self.num_bin(nd.n, a, b);
+    }
+
+    fn eval_un(&self, env: i64, nd: Node) -> Value {
+        let v = self.eval(env, nd.a);
+        if nd.n == KW_NOT {
+            return v_bool(v_truthy(v) == false);
+        };
+        if nd.n == TK_SUB {
+            if v.tag == VT_INT {
+                return v_int(0 - v.i);
+            };
+            if v.tag == VT_NUM {
+                return v_num(0.0 - v.f);
+            };
+            self.fail_str(STR_PTR("attempt to negate a non-number value"), 38);
+            return v_nil();
+        };
+        if nd.n == TK_HASH {
+            if v.tag == VT_STR {
+                return v_int(s_len(v.s) as i64);
+            };
+            if v.tag == VT_TABLE {
+                return v_int(self.table_len(v.i));
+            };
+            self.fail_str(STR_PTR("attempt to get length of a value"), 34);
+            return v_nil();
+        };
+        if nd.n == TK_TILDE {
+            return v_int(v_to_i64(v) ^ (-1));
+        };
+        return v_nil();
+    }
+
+    fn call_value(&self, f: Value, args: Vec<Value>) -> Vec<Value> {
+        if f.tag == VT_FUNC {
+            return self.call_lua(f.i, args);
+        };
+        if f.tag == VT_BUILTIN {
+            return self.builtin_call(f.i, args);
+        };
+        self.fail_str(STR_PTR("attempt to call a non-function value"), 37);
+        return Vec::new();
+    }
+
+    fn call_lua(&self, fid: i64, args: Vec<Value>) -> Vec<Value> {
+        let env = self.new_env(self.funcs[fid].env);
+        let nparams = len(self.funcs[fid].params) as i64;
+        let ai = 0;
+        if self.funcs[fid].has_self != 0 {
+            let sv = v_nil();
+            if len(args) > 0 {
+                sv = args[0];
+            };
+            self.env_define(env, s_from(STR_PTR("self"), 4), sv, 0);
+            ai = 1;
+        };
+        let i = 0;
+        while i < nparams {
+            let pid = self.funcs[fid].params[i];
+            let pn = self.nd(pid);
+            if pn.n == 4 {
+                let t = self.new_table();
+                let j = ai;
+                let idx = 1;
+                while j < (len(args) as i64) {
+                    self.table_set(t, v_int(idx), args[j]);
+                    idx = idx + 1;
+                    j = j + 1;
+                }
+                self.table_set_str(t, s_from(STR_PTR("n"), 1), v_int(idx - 1));
+                self.envs[env].vargname = pn.s;
+                self.env_define(env, pn.s, v_table(t), 0);
+            } else {
+                let av = v_nil();
+                if ai < (len(args) as i64) {
+                    av = args[ai];
+                    ai = ai + 1;
+                };
+                self.env_define(env, pn.s, av, 0);
+            };
+            i = i + 1;
+        }
+        let va = Vec::new();
+        while ai < (len(args) as i64) {
+            va.push(args[ai]);
+            ai = ai + 1;
+        }
+        self.envs[env].varargs = va;
+        self.ctrl = CTL_NONE;
+        self.retvals = Vec::new();
+        self.exec_block(env, self.funcs[fid].body);
+        let out = self.take_returns();
+        if self.ctrl == CTL_RETURN {
+            self.ctrl = CTL_NONE;
+        };
+        return out;
+    }
+}

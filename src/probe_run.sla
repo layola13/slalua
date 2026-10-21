@@ -1,0 +1,39 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/ptr.sa"
+@import "sa_std/fs.sa"
+@import "src/tok.sla"
+@import "src/rt.sa"
+@import "src/strutil.sla"
+@import "src/lexer.sla"
+@import "src/parser.sla"
+@import "src/interp.sla"
+
+fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
+    return sa_fs_read_file(path_ptr, path_len, 4194304);
+}
+
+fn main() -> i32 {
+    let path = "tests/features.lua";
+    let src = read_text(STR_PTR(path), STR_LEN(path));
+    if src == 0 {
+        println("read failed");
+        return 1;
+    };
+    let text = s_from(SLA_FS_BUFFER_DATA(src), SLA_FS_BUFFER_LEN(src));
+    let lx = lex_source(text);
+    let p = parse_tokens(lx);
+    if p.err != 0 {
+        println("parse err={} line={} kind={}", p.err, p.errline, p.errkind);
+        return 1;
+    };
+    let root = p.root;
+    let nodes = p.nodes;
+    let lists = p.lists;
+    let it = interp_new(nodes, lists);
+    it.run(root);
+    let st = sa_fs_read_buffer_free(src);
+    return 0;
+}

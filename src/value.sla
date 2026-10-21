@@ -1,0 +1,151 @@
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "src/strutil.sla"
+
+const VT_NIL: i64 = 0;
+const VT_BOOL: i64 = 1;
+const VT_INT: i64 = 2;
+const VT_NUM: i64 = 3;
+const VT_STR: i64 = 4;
+const VT_TABLE: i64 = 5;
+const VT_FUNC: i64 = 6;
+const VT_BUILTIN: i64 = 7;
+
+struct Value {
+    tag: i64,
+    i: i64,
+    f: f64,
+    s: u64,
+}
+
+fn value_new(tag: i64, i: i64, f: f64, s: u64) -> Value {
+    return Value { tag: tag, i: i, f: f, s: s };
+}
+
+fn v_nil() -> Value {
+    return value_new(VT_NIL, 0, 0.0, 0);
+}
+
+fn v_bool(b: bool) -> Value {
+    if b {
+        return value_new(VT_BOOL, 1, 0.0, 0);
+    };
+    return value_new(VT_BOOL, 0, 0.0, 0);
+}
+
+fn v_int(n: i64) -> Value {
+    return value_new(VT_INT, n, n as f64, 0);
+}
+
+fn v_num(n: f64) -> Value {
+    return value_new(VT_NUM, 0, n, 0);
+}
+
+fn v_str(s: u64) -> Value {
+    return value_new(VT_STR, 0, 0.0, s);
+}
+
+fn v_table(id: i64) -> Value {
+    return value_new(VT_TABLE, id, 0.0, 0);
+}
+
+fn v_func(id: i64) -> Value {
+    return value_new(VT_FUNC, id, 0.0, 0);
+}
+
+fn v_builtin(id: i64) -> Value {
+    return value_new(VT_BUILTIN, id, 0.0, 0);
+}
+
+fn v_truthy(v: Value) -> bool {
+    if v.tag == VT_NIL {
+        return false;
+    };
+    if v.tag == VT_BOOL && v.i == 0 {
+        return false;
+    };
+    return true;
+}
+
+fn v_is_number(v: Value) -> bool {
+    return v.tag == VT_INT || v.tag == VT_NUM;
+}
+
+fn v_as_num(v: Value) -> f64 {
+    if v.tag == VT_INT {
+        return v.i as f64;
+    };
+    return v.f;
+}
+
+fn v_equal(a: Value, b: Value) -> bool {
+    if a.tag == VT_NIL || b.tag == VT_NIL {
+        return a.tag == b.tag;
+    };
+    if v_is_number(a) && v_is_number(b) {
+        if a.tag == VT_INT && b.tag == VT_INT {
+            return a.i == b.i;
+        };
+        return v_as_num(a) == v_as_num(b);
+    };
+    if a.tag != b.tag {
+        return false;
+    };
+    if a.tag == VT_BOOL || a.tag == VT_INT {
+        return a.i == b.i;
+    };
+    if a.tag == VT_STR {
+        return s_eq(a.s, b.s);
+    };
+    if a.tag == VT_TABLE || a.tag == VT_FUNC || a.tag == VT_BUILTIN {
+        return a.i == b.i;
+    };
+    return a.f == b.f;
+}
+
+fn v_type_name(v: Value) -> u64 {
+    if v.tag == VT_NIL {
+        return s_from(STR_PTR("nil"), 3);
+    };
+    if v.tag == VT_BOOL {
+        return s_from(STR_PTR("boolean"), 7);
+    };
+    if v.tag == VT_INT || v.tag == VT_NUM {
+        return s_from(STR_PTR("number"), 6);
+    };
+    if v.tag == VT_STR {
+        return s_from(STR_PTR("string"), 6);
+    };
+    if v.tag == VT_TABLE {
+        return s_from(STR_PTR("table"), 5);
+    };
+    return s_from(STR_PTR("function"), 8);
+}
+
+fn v_to_string(v: Value) -> u64 {
+    if v.tag == VT_NIL {
+        return s_from(STR_PTR("nil"), 3);
+    };
+    if v.tag == VT_BOOL {
+        if v.i != 0 {
+            return s_from(STR_PTR("true"), 4);
+        };
+        return s_from(STR_PTR("false"), 5);
+    };
+    if v.tag == VT_INT {
+        return s_i64(v.i);
+    };
+    if v.tag == VT_NUM {
+        return s_f64(v.f);
+    };
+    if v.tag == VT_STR {
+        return v.s;
+    };
+    if v.tag == VT_TABLE {
+        return s_from(STR_PTR("table: 0x0"), 11);
+    };
+    if v.tag == VT_FUNC || v.tag == VT_BUILTIN {
+        return s_from(STR_PTR("function: 0x0"), 14);
+    };
+    return s_from(STR_PTR("?"), 1);
+}

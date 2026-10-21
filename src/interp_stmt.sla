@@ -1,0 +1,345 @@
+@import "sa_std/vec.sa"
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_expr.sla"
+
+impl Interp {
+    fn exec_block(&self, env: i64, lid: i64) -> void {
+        let n = self.list_len(lid);
+        let pc = 0;
+        while pc < n {
+            if self.ctrl == CTL_GOTO {
+                let target = self.gotolabel;
+                let j = 0;
+                let found = -1;
+                while j < n {
+                    let sid = self.list_get(lid, j);
+                    let sn = self.nd(sid);
+                    if sn.kind == NK_LABEL && s_eq(sn.s, target) {
+                        found = j;
+                        j = n;
+                        continue;
+                    };
+                    j = j + 1;
+                }
+                if found < 0 {
+                    return;
+                };
+                self.ctrl = CTL_NONE;
+                pc = found;
+                continue;
+            };
+            if self.ctrl != CTL_NONE {
+                return;
+            };
+            self.exec_stmt(env, self.list_get(lid, pc));
+            pc = pc + 1;
+        }
+    }
+
+    fn exec_stmt(&self, env: i64, id: i64) -> void {
+        let nd = self.nd(id);
+        self.curline = nd.line;
+        if nd.kind == NK_LOCAL {
+            self.exec_local(env, nd);
+            return;
+        };
+        if nd.kind == NK_LOCAL_FUNC {
+            self.env_define(env, nd.s, v_nil(), 0);
+            let f = self.eval(env, nd.a);
+            let fe = self.env_find_env(env, nd.s);
+            if fe >= 0 {
+                self.env_update(fe, nd.s, f);
+            };
+            return;
+        };
+        if nd.kind == NK_ASSIGN {
+            self.exec_assign(env, nd);
+            return;
+        };
+        if nd.kind == NK_CALLSTAT {
+            self.eval(env, nd.a);
+            return;
+        };
+        if nd.kind == NK_DO {
+            let e = self.new_env(env);
+            self.exec_block(e, nd.a);
+            return;
+        };
+        if nd.kind == NK_IF {
+            if v_truthy(self.eval(env, nd.a)) {
+                let e = self.new_env(env);
+                self.exec_block(e, nd.b);
+            } else {
+                if nd.c != 0 {
+                    let e = self.new_env(env);
+                    self.exec_block(e, nd.c);
+                };
+            };
+            return;
+        };
+        if nd.kind == NK_WHILE {
+            self.exec_while(env, nd);
+            return;
+        };
+        if nd.kind == NK_REPEAT {
+            self.exec_repeat(env, nd);
+            return;
+        };
+        if nd.kind == NK_FOR_NUM {
+            self.exec_for_num(env, nd);
+            return;
+        };
+        if nd.kind == NK_FOR_IN {
+            self.exec_for_in(env, nd);
+            return;
+        };
+        if nd.kind == NK_FUNC_STMT {
+            let f = self.eval(env, nd.b);
+            self.assign_target(env, nd.a, f);
+            return;
+        };
+        if nd.kind == NK_RETURN {
+            let vals = self.eval_list(env, nd.a);
+            self.retvals = vals;
+            self.ctrl = CTL_RETURN;
+            return;
+        };
+        if nd.kind == NK_BREAK {
+            self.ctrl = CTL_BREAK;
+            return;
+        };
+        if nd.kind == NK_GOTO {
+            self.gotolabel = nd.s;
+            self.ctrl = CTL_GOTO;
+            return;
+        };
+        if nd.kind == NK_LABEL {
+            return;
+        };
+        if nd.kind == NK_GLOBAL {
+            self.exec_global(env, nd);
+            return;
+        };
+        if nd.kind == NK_GLOBAL_FUNC {
+            let f = self.eval(env, nd.a);
+            self.table_set(self.globals, v_str(nd.s), f);
+            return;
+        };
+    }
+
+    fn exec_local(&self, env: i64, nd: Node) -> void {
+        let vals = self.eval_list(env, nd.b);
+        let n = self.list_len(nd.a);
+        let i = 0;
+        while i < n {
+            let nid = self.list_get(nd.a, i);
+            let nn = self.nd(nid);
+            let v = v_nil();
+            if i < (len(vals) as i64) {
+                v = vals[i];
+            };
+            self.env_define(env, nn.s, v, nn.n);
+            i = i + 1;
+        }
+    }
+
+    fn exec_global(&self, env: i64, nd: Node) -> void {
+        if self.list_len(nd.a) == 0 {
+            return;
+        };
+        let vals = self.eval_list(env, nd.b);
+        let n = self.list_len(nd.a);
+        let i = 0;
+        while i < n {
+            let nid = self.list_get(nd.a, i);
+            let nn = self.nd(nid);
+            let v = v_nil();
+            if i < (len(vals) as i64) {
+                v = vals[i];
+            };
+            self.env_define(env, nn.s, v, nn.n);
+            i = i + 1;
+        }
+    }
+
+    fn exec_assign(&self, env: i64, nd: Node) -> void {
+        let vals = self.eval_list(env, nd.b);
+        let n = self.list_len(nd.a);
+        let i = 0;
+        while i < n {
+            let t = self.list_get(nd.a, i);
+            let v = v_nil();
+            if i < (len(vals) as i64) {
+                v = vals[i];
+            };
+            self.assign_target(env, t, v);
+            i = i + 1;
+        }
+    }
+
+    fn assign_target(&self, env: i64, id: i64, val: Value) -> void {
+        let nd = self.nd(id);
+        if nd.kind == NK_NAME {
+            self.env_set(env, nd.s, val);
+            return;
+        };
+        if nd.kind == NK_INDEX {
+            let obj = self.eval(env, nd.a);
+            let key = v_str(nd.s);
+            if nd.b != 0 {
+                key = self.eval(env, nd.b);
+            };
+            self.set_index(obj, key, val);
+            return;
+        };
+    }
+
+    fn exec_while(&self, env: i64, nd: Node) -> void {
+        let going = true;
+        while going && self.ctrl == CTL_NONE {
+            if v_truthy(self.eval(env, nd.a)) == false {
+                going = false;
+                continue;
+            };
+            let e = self.new_env(env);
+            self.exec_block(e, nd.b);
+            if self.ctrl == CTL_BREAK {
+                self.ctrl = CTL_NONE;
+                going = false;
+            };
+        }
+    }
+
+    fn exec_repeat(&self, env: i64, nd: Node) -> void {
+        let going = true;
+        while going && self.ctrl == CTL_NONE {
+            let e = self.new_env(env);
+            self.exec_block(e, nd.a);
+            if self.ctrl == CTL_BREAK {
+                self.ctrl = CTL_NONE;
+                going = false;
+                continue;
+            };
+            if self.ctrl != CTL_NONE {
+                going = false;
+                continue;
+            };
+            if v_truthy(self.eval(e, nd.b)) {
+                going = false;
+            };
+        }
+    }
+
+    fn exec_for_num(&self, env: i64, nd: Node) -> void {
+        let sv = self.eval(env, nd.a);
+        let lv = self.eval(env, nd.b);
+        let stv = v_int(1);
+        if nd.c != 0 {
+            stv = self.eval(env, nd.c);
+        };
+        if v_is_number(sv) == false || v_is_number(lv) == false || v_is_number(stv) == false {
+            self.fail_str(STR_PTR("bad numeric for limit"), 23);
+            return;
+        };
+        let all_int = sv.tag == VT_INT && lv.tag == VT_INT && stv.tag == VT_INT;
+        if all_int {
+            let i = sv.i;
+            let step = stv.i;
+            if step == 0 {
+                self.fail_str(STR_PTR("numeric for step is zero"), 25);
+                return;
+            };
+            let going = true;
+            while going && self.ctrl == CTL_NONE {
+                if step > 0 && i > lv.i {
+                    going = false;
+                    continue;
+                };
+                if step < 0 && i < lv.i {
+                    going = false;
+                    continue;
+                };
+                let e = self.new_env(env);
+                self.env_define(e, nd.s, v_int(i), 1);
+                self.exec_block(e, nd.d);
+                if self.ctrl == CTL_BREAK {
+                    self.ctrl = CTL_NONE;
+                    going = false;
+                    continue;
+                };
+                i = i + step;
+            }
+            return;
+        };
+        let i = v_as_num(sv);
+        let step = v_as_num(stv);
+        if step == 0.0 {
+            self.fail_str(STR_PTR("numeric for step is zero"), 25);
+            return;
+        };
+        let going = true;
+        while going && self.ctrl == CTL_NONE {
+            if step > 0.0 && i > v_as_num(lv) {
+                going = false;
+                continue;
+            };
+            if step < 0.0 && i < v_as_num(lv) {
+                going = false;
+                continue;
+            };
+            let e = self.new_env(env);
+            self.env_define(e, nd.s, v_num(i), 1);
+            self.exec_block(e, nd.d);
+            if self.ctrl == CTL_BREAK {
+                self.ctrl = CTL_NONE;
+                going = false;
+                continue;
+            };
+            i = i + step;
+        }
+    }
+
+    fn exec_for_in(&self, env: i64, nd: Node) -> void {
+        let vals = self.eval_list(env, nd.c);
+        let f = v_nil();
+        let state = v_nil();
+        let ctl = v_nil();
+        if len(vals) > 0 { f = vals[0]; };
+        if len(vals) > 1 { state = vals[1]; };
+        if len(vals) > 2 { ctl = vals[2]; };
+        let going = true;
+        while going && self.ctrl == CTL_NONE {
+            let two = Vec::new();
+            two.push(state);
+            two.push(ctl);
+            let out = self.call_value(f, two);
+            if len(out) == 0 || out[0].tag == VT_NIL {
+                going = false;
+                continue;
+            };
+            ctl = out[0];
+            let e = self.new_env(env);
+            let nn = self.list_len(nd.b);
+            let i = 0;
+            while i < nn {
+                let nid = self.list_get(nd.b, i);
+                let nm = self.nd(nid);
+                let v = v_nil();
+                if i < (len(out) as i64) {
+                    v = out[i];
+                };
+                self.env_define(e, nm.s, v, 1);
+                i = i + 1;
+            }
+            self.exec_block(e, nd.d);
+            if self.ctrl == CTL_BREAK {
+                self.ctrl = CTL_NONE;
+                going = false;
+            };
+        }
+    }
+}
