@@ -1,4 +1,5 @@
 @import "sa_std/vec.sa"
+@import "src/ast.sla"
 @import "src/value.sla"
 @import "src/strutil.sla"
 @import "src/interp_core.sla"
@@ -7,20 +8,98 @@
 @import "src/libutil.sla"
 
 impl Interp {
-    fn dbg_info_table(&self, f: Value) -> Value {
+    fn dbg_func_node(&self, body: i64) -> i64 {
+        let i = (len(self.nodes) as i64) - 1;
+        while i >= 0 {
+            let nd = self.nodes[i];
+            if nd.kind == NK_FUNC && nd.b == body {
+                return i;
+            };
+            i = i - 1;
+        }
+        return -1;
+    }
+
+    fn dbg_last_line(&self, fid: i64, ld: i64) -> i64 {
+        let last = ld;
+        let i = 0;
+        while i < fid {
+            let nd = self.nodes[i];
+            if nd.line >= ld && nd.line > last {
+                last = nd.line;
+            };
+            i = i + 1;
+        }
+        return last + 1;
+    }
+
+    fn dbg_valid_opts(&self, opts: u64) -> bool {
+        if opts == 0 {
+            return true;
+        };
+        let n = s_len(opts);
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(opts, i) as i64;
+            if c != 110 && c != 83 && c != 108 && c != 117 && c != 116 && c != 102 && c != 114 && c != 76 {
+                return false;
+            };
+            i = i + 1;
+        }
+        return true;
+    }
+
+    fn dbg_has_opt(&self, opts: u64, c: i64) -> bool {
+        if opts == 0 {
+            return false;
+        };
+        let n = s_len(opts);
+        let i: u64 = 0;
+        while i < n {
+            if (s_byte(opts, i) as i64) == c {
+                return true;
+            };
+            i = i + 1;
+        }
+        return false;
+    }
+
+    fn dbg_info_table(&self, f: Value, opts: u64, level: i64) -> Value {
         let t = self.new_table();
-        self.table_set_str(t, istr(STR_PTR("currentline"), 11), v_int(self.curline));
-        self.table_set_str(t, istr(STR_PTR("source"), 6), v_str(s_from(STR_PTR("@?"), 2)));
-        self.table_set_str(t, istr(STR_PTR("short_src"), 9), v_str(s_from(STR_PTR("?"), 1)));
-        self.table_set_str(t, istr(STR_PTR("what"), 4), v_str(s_from(STR_PTR("Lua"), 3)));
-        self.table_set_str(t, istr(STR_PTR("linedefined"), 11), v_int(-1));
-        self.table_set_str(t, istr(STR_PTR("lastlinedefined"), 15), v_int(-1));
-        self.table_set_str(t, istr(STR_PTR("name"), 4), v_str(s_from(STR_PTR("?"), 1)));
+        let is_lua = f.tag == VT_FUNC;
+        let what = s_from(STR_PTR("C"), 1);
+        let src = s_from(STR_PTR("=[C]"), 4);
+        let short = s_from(STR_PTR("[C]"), 3);
+        let ld = -1;
+        let last = -1;
+        let cur = -1;
+        if is_lua {
+            what = s_from(STR_PTR("Lua"), 3);
+            src = s_from(STR_PTR("=?"), 2);
+            short = s_from(STR_PTR("?"), 1);
+            let body = self.funcs[f.i].body;
+            let fid = self.dbg_func_node(body);
+            if fid >= 0 {
+                ld = self.nodes[fid].line;
+                last = self.dbg_last_line(fid, ld);
+            } else {
+                ld = 0;
+                last = 0;
+            };
+        } else {
+            cur = self.curline;
+        };
+        self.table_set_str(t, istr(STR_PTR("currentline"), 11), v_int(cur));
+        self.table_set_str(t, istr(STR_PTR("source"), 6), v_str(src));
+        self.table_set_str(t, istr(STR_PTR("short_src"), 9), v_str(short));
+        self.table_set_str(t, istr(STR_PTR("what"), 4), v_str(what));
+        self.table_set_str(t, istr(STR_PTR("linedefined"), 11), v_int(ld));
+        self.table_set_str(t, istr(STR_PTR("lastlinedefined"), 15), v_int(last));
         self.table_set_str(t, istr(STR_PTR("namewhat"), 8), v_str(s_from(STR_PTR(""), 0)));
         self.table_set_str(t, istr(STR_PTR("nups"), 4), v_int(0));
         self.table_set_str(t, istr(STR_PTR("nparams"), 7), v_int(0));
         self.table_set_str(t, istr(STR_PTR("isvararg"), 8), v_bool(true));
-        if f.tag == VT_FUNC {
+        if is_lua {
             self.table_set_str(t, istr(STR_PTR("func"), 4), f);
             let e = self.funcs[f.i].env;
             let n = 0;
@@ -30,17 +109,52 @@ impl Interp {
             self.table_set_str(t, istr(STR_PTR("nups"), 4), v_int(n));
             let np = len(self.funcs[f.i].params) as i64;
             self.table_set_str(t, istr(STR_PTR("nparams"), 7), v_int(np));
+            self.table_set_str(t, istr(STR_PTR("isvararg"), 8), v_bool(self.funcs[f.i].vararg != 0));
+        };
+        if is_lua && self.dbg_has_opt(opts, 76) {
+            let at = self.new_table();
+            let line = ld + 1;
+            while line <= last {
+                self.table_set(at, v_int(line), v_bool(true));
+                line = line + 1;
+            }
+            self.table_set_str(t, istr(STR_PTR("activelines"), 11), v_table(at));
         };
         return v_table(t);
-    }
+    };
 
     fn dbg_getinfo(&self, args: &Vec<Value>) -> Vec<Value> {
         let f = v_nil();
         if len(args) > 0 {
             f = args[0];
         };
-        return bs_one(self.dbg_info_table(f));
-    }
+        let opts = 0;
+        if len(args) > 1 {
+            let o = args[1];
+            if o.tag == VT_STR {
+                opts = o.s;
+            } else if o.tag != VT_NIL {
+                self.fail_str(STR_PTR("bad argument #2 to 'getinfo' (string expected)"), 46);
+                return Vec::new();
+            };
+        };
+        if self.dbg_valid_opts(opts) == false {
+            self.fail_str(STR_PTR("bad argument #2 to 'getinfo' (invalid option)"), 45);
+            return Vec::new();
+        };
+        if f.tag == VT_INT || f.tag == VT_NUM {
+            let lv = v_to_i64(f);
+            if lv < 0 || lv > 195 || lv > self.depth + 1 {
+                return bs_one(v_nil());
+            };
+            return bs_one(self.dbg_info_table(v_nil(), opts, lv));
+        };
+        if f.tag != VT_FUNC && f.tag != VT_BUILTIN {
+            self.fail_str(STR_PTR("bad argument #1 to 'getinfo' (function or level expected)"), 57);
+            return Vec::new();
+        };
+        return bs_one(self.dbg_info_table(f, opts, -1));
+    };
 
     fn dbg_getupvalue(&self, args: &Vec<Value>) -> Vec<Value> {
         let f = bs_arg(args, 0);

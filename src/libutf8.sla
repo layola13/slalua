@@ -295,7 +295,7 @@ impl Interp {
             return bs_one(v_int(q + 1));
         };
         return bs_one(v_nil());
-    }
+    };
 
     fn utf8_codes(&self, args: &Vec<Value>) -> Vec<Value> {
         let s = v_to_string(bs_arg(args, 0));

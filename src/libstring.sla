@@ -71,15 +71,40 @@ impl Interp {
             let n = self.bi_int(bs_arg(args, 1), 0);
             let sep = bs_str(STR_PTR(""), 0);
             if len(args) > 2 { sep = v_to_string(bs_arg(args, 2)); };
+            let l = s_len(s) as i64;
+            let lsep = s_len(sep) as i64;
             if n > 0 {
-                let l = s_len(s) as i64;
-                let lsep = s_len(sep) as i64;
                 if l + lsep > MAXSSIZE / n {
                     self.fail_str(STR_PTR("resulting string too large"), 26);
                     return Vec::new();
                 };
             };
             let out = bs_str(STR_PTR(""), 0);
+            if n > 0 {
+                if l == 0 {
+                    let i: i64 = 0;
+                    while i < n {
+                        if i > 0 { out = s_cat(out, sep); };
+                        i = i + 1;
+                    }
+                    return bs_one(v_str(out));
+                };
+                if lsep == 0 {
+                    // build by doubling: O(n log n) instead of O(n^2)
+                    let unit = s;
+                    let count: i64 = 1;
+                    let total: i64 = l;
+                    while total < n * l {
+                        unit = s_cat(unit, unit);
+                        count = count * 2;
+                        total = total * 2;
+                    }
+                    let need = n * l;
+                    let chunk = s_slice(unit, 0, need);
+                    out = s_cat(out, chunk);
+                    return bs_one(v_str(out));
+                };
+            };
             let i: i64 = 0;
             while i < n {
                 if i > 0 { out = s_cat(out, sep); };
@@ -140,7 +165,7 @@ impl Interp {
             i = i + 1;
         }
         return out;
-    }
+    };
 
     fn bi_format(&self, args: &Vec<Value>) -> u64 {
         let f = v_to_string(bs_arg(args, 0));
@@ -321,7 +346,7 @@ impl Interp {
             i = pat_assign(i, k + 1);
         }
         return buf;
-    }
+    };
 
     fn pat_push_value(&self, v: Value) -> Vec<Value> {
         let buf = Vec::new();
@@ -524,4 +549,4 @@ impl Interp {
         r.push(v_int(n));
         return r;
     }
-}
+};

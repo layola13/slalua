@@ -5,64 +5,9 @@
 @import "src/tok.sla"
 @import "src/rt.sa"
 @import "src/strutil.sla"
+@import "src/lexlit.sla"
 
-fn lx_is_digit(c: u8) -> bool {
-    return c >= 48 && c <= 57;
-}
-
-fn lx_is_hex(c: u8) -> bool {
-    if c >= 48 && c <= 57 {
-        return true;
-    };
-    if c >= 97 && c <= 102 {
-        return true;
-    };
-    if c >= 65 && c <= 70 {
-        return true;
-    };
-    return false;
-}
-
-fn lx_hex_val(c: u8) -> i64 {
-    if c >= 48 && c <= 57 {
-        return (c - 48) as i64;
-    };
-    if c >= 97 && c <= 102 {
-        return ((c - 97) + 10) as i64;
-    };
-    return ((c - 65) + 10) as i64;
-}
-
-fn lx_hex_digit(c: u8) -> i64 {
-    if c >= 48 && c <= 57 {
-        return (c - 48) as i64;
-    };
-    if c >= 97 && c <= 102 {
-        return ((c - 97) + 10) as i64;
-    };
-    if c >= 65 && c <= 70 {
-        return ((c - 65) + 10) as i64;
-    };
-    return -1;
-}
-
-fn lx_is_alpha(c: u8) -> bool {
-    if c >= 97 && c <= 122 {
-        return true;
-    };
-    if c >= 65 && c <= 90 {
-        return true;
-    };
-    return c == 95;
-}
-
-fn lx_is_alnum(c: u8) -> bool {
-    return lx_is_alpha(c) || lx_is_digit(c);
-}
-
-fn lx_is_space(c: u8) -> bool {
-    return c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12;
-}
+const LX_ERR_TOK: i64 = 999;
 
 struct Lexer {
     src: u64,
@@ -72,6 +17,7 @@ struct Lexer {
     toks: Vec<Token>,
     err: i64,
     errline: i64,
+    errstr: u64,
 }
 
 fn lx_new(src: u64) -> Lexer {
@@ -83,6 +29,7 @@ fn lx_new(src: u64) -> Lexer {
         toks: Vec::new(),
         err: 0,
         errline: 0,
+        errstr: 0,
     };
 }
 
@@ -110,7 +57,31 @@ impl Lexer {
         if self.err == 0 {
             self.err = 1;
             self.errline = line;
+            self.errstr = s_from(STR_PTR("syntax error near <eof>"), 23);
         };
+    }
+
+    fn fail_msg(&self, line: i64, msg: u64) -> void {
+        if self.err == 0 {
+            self.err = 1;
+            self.errline = line;
+            self.errstr = msg;
+        };
+    }
+
+    fn fail_near(&self, line: i64, start: u64, what: ptr, what_len: u64, extra: i64) -> void {
+        let end = self.pos;
+        if extra != 0 && self.pos < self.len {
+            end = self.pos + 1;
+        };
+        let raw = s_slice(self.src, start, end - start);
+        let msg = s_cat(s_from(what, what_len), s_cat(s_from(STR_PTR(" near '"), 7), s_cat(raw, s_from(STR_PTR("'"), 1))));
+        self.fail_msg(line, msg);
+    }
+
+    fn fail_eof(&self, line: i64, what: ptr, what_len: u64) -> void {
+        let msg = s_cat(s_from(what, what_len), s_from(STR_PTR(" near <eof>"), 11));
+        self.fail_msg(line, msg);
     }
 
     fn add(&self, kind: i64, n: i64, f: f64, s: u64, aux: i64) -> void {
@@ -258,6 +229,7 @@ impl Lexer {
 
     fn read_quoted(&self, quote: u8, line: i64) -> u64 {
         let out = s_from(STR_PTR(""), 0);
+        let start = self.pos;
         self.take();
         while self.pos < self.len {
             let c = self.take();
@@ -302,8 +274,18 @@ impl Lexer {
                 continue;
             };
             if e == 120 {
-                let h1 = lx_hex_val(self.take());
-                let h2 = lx_hex_val(self.take());
+                let c1 = self.take();
+                if lx_is_hex(c1) == false {
+                    self.fail_near(line, start, STR_PTR("hexadecimal digit expected"), 26, 0);
+                    return out;
+                };
+                let c2 = self.take();
+                if lx_is_hex(c2) == false {
+                    self.fail_near(line, start, STR_PTR("hexadecimal digit expected"), 26, 0);
+                    return out;
+                };
+                let h1 = lx_hex_val(c1);
+                let h2 = lx_hex_val(c2);
                 out = s_cat(out, s_char((h1 * 16 + h2) as u8));
                 continue;
             };
@@ -314,6 +296,10 @@ impl Lexer {
                     v = v * 10 + (self.take() as i64) - 48;
                     cnt = cnt + 1;
                 }
+                if v > 255 {
+                    self.fail_near(line, start, STR_PTR("decimal escape too large"), 24, 1);
+                    return out;
+                };
                 out = s_cat(out, s_char(v as u8));
                 continue;
             };
@@ -324,8 +310,9 @@ impl Lexer {
                 continue;
             };
             if e == 117 {
-                if self.take() != 123 {
-                    self.fail(line);
+                let c = self.take();
+                if c != 123 {
+                    self.fail_near(line, start, STR_PTR("missing '{'"), 11, 0);
                     return out;
                 };
                 let v: i64 = 0;
@@ -340,20 +327,37 @@ impl Lexer {
                     };
                     let dv = lx_hex_digit(self.take());
                     if dv < 0 {
-                        self.fail(line);
+                        self.fail_near(line, start, STR_PTR("missing '}'"), 11, 0);
+                        return out;
+                    };
+                    if v > (2147483647 - dv) / 16 {
+                        self.fail_near(line, start, STR_PTR("UTF-8 value too large"), 21, 0);
                         return out;
                     };
                     v = v * 16 + dv;
                     digits = digits + 1;
                 }
-                if closed == false || digits == 0 || v > 2147483647 {
-                    self.fail(line);
+                if closed == false {
+                    self.fail_near(line, start, STR_PTR("missing '}'"), 11, 0);
+                    return out;
+                };
+                if digits == 0 {
+                    self.fail_near(line, start, STR_PTR("hexadecimal digit expected"), 26, 0);
                     return out;
                 };
                 out = s_cat(out, s_utf8_esc(v));
                 continue;
             };
-            out = s_cat(out, s_char(e));
+            if e == 92 || e == 34 || e == 39 {
+                out = s_cat(out, s_char(e));
+                continue;
+            };
+            if e == 10 || e == 13 {
+                out = s_cat(out, s_char(10));
+                continue;
+            };
+            self.fail_near(line, start, STR_PTR("invalid escape sequence"), 23, 0);
+            return out;
         }
         self.fail(line);
         return out;
@@ -411,7 +415,7 @@ impl Lexer {
             }
         };
         return v;
-    }
+    };
 
     fn parse_int_text(&self, text: u64) -> i64 {
         let n = s_len(text);
@@ -436,7 +440,7 @@ impl Lexer {
             i = i + 1;
         }
         return v;
-    }
+    };
 
     fn read_number(&self) -> void {
         let start = self.pos;
@@ -501,7 +505,7 @@ impl Lexer {
         };
         let iv = self.parse_int_text(text);
         self.add(TK_INT, iv, 0.0, text, 0);
-    }
+    };
 
     fn read_token(&self) -> void {
         if self.pos >= self.len {
@@ -522,6 +526,9 @@ impl Lexer {
         if c == 34 || c == 39 {
             let line = self.line;
             let str = self.read_quoted(c, line);
+            if self.err != 0 {
+                return;
+            };
             self.add(TK_STR, 0, 0.0, str, 0);
             return;
         };
@@ -530,6 +537,9 @@ impl Lexer {
             let lvl = self.long_open();
             if lvl >= 0 {
                 let str = self.read_long(lvl, line);
+                if self.err != 0 {
+                    return;
+                };
                 self.add(TK_STR, 0, 0.0, str, 0);
                 return;
             };
@@ -657,41 +667,30 @@ impl Lexer {
         let going = true;
         while going {
             self.skip_ws();
+            if self.err != 0 {
+                going = false;
+                continue;
+            };
             if self.pos >= self.len {
                 going = false;
             } else {
                 self.read_token();
             };
         }
+        if self.err != 0 {
+            let et = token_new(LX_ERR_TOK, self.errline, 0, 0.0, self.errstr, 0);
+            let nt = Vec::new();
+            nt.push(et);
+            let i = 0;
+            while i < (len(self.toks) as i64) {
+                nt.push(self.toks[i]);
+                i = i + 1;
+            }
+            self.toks = nt;
+            return;
+        };
         self.add(TK_EOF, 0, 0.0, 0, 0);
     }
-}
-
-fn lx_keyword(s: u64) -> i64 {
-    if s_eq_lit(s, STR_PTR("and"), 3) { return KW_AND; };
-    if s_eq_lit(s, STR_PTR("break"), 5) { return KW_BREAK; };
-    if s_eq_lit(s, STR_PTR("do"), 2) { return KW_DO; };
-    if s_eq_lit(s, STR_PTR("else"), 4) { return KW_ELSE; };
-    if s_eq_lit(s, STR_PTR("elseif"), 6) { return KW_ELSEIF; };
-    if s_eq_lit(s, STR_PTR("end"), 3) { return KW_END; };
-    if s_eq_lit(s, STR_PTR("false"), 5) { return KW_FALSE; };
-    if s_eq_lit(s, STR_PTR("for"), 3) { return KW_FOR; };
-    if s_eq_lit(s, STR_PTR("function"), 8) { return KW_FUNCTION; };
-    if s_eq_lit(s, STR_PTR("global"), 6) { return KW_GLOBAL; };
-    if s_eq_lit(s, STR_PTR("goto"), 4) { return KW_GOTO; };
-    if s_eq_lit(s, STR_PTR("if"), 2) { return KW_IF; };
-    if s_eq_lit(s, STR_PTR("in"), 2) { return KW_IN; };
-    if s_eq_lit(s, STR_PTR("local"), 5) { return KW_LOCAL; };
-    if s_eq_lit(s, STR_PTR("nil"), 3) { return KW_NIL; };
-    if s_eq_lit(s, STR_PTR("not"), 3) { return KW_NOT; };
-    if s_eq_lit(s, STR_PTR("or"), 2) { return KW_OR; };
-    if s_eq_lit(s, STR_PTR("repeat"), 6) { return KW_REPEAT; };
-    if s_eq_lit(s, STR_PTR("return"), 6) { return KW_RETURN; };
-    if s_eq_lit(s, STR_PTR("then"), 4) { return KW_THEN; };
-    if s_eq_lit(s, STR_PTR("true"), 4) { return KW_TRUE; };
-    if s_eq_lit(s, STR_PTR("until"), 5) { return KW_UNTIL; };
-    if s_eq_lit(s, STR_PTR("while"), 5) { return KW_WHILE; };
-    return TK_NAME;
 }
 
 fn lex_source(src: u64) -> Lexer {

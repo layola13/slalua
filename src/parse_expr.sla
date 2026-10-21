@@ -100,7 +100,7 @@ impl Parser {
             left = self.mk(NK_BIN, t.line, left, right, 0, 0, t.kind, 0.0, 0);
         }
         return left;
-    }
+    };
 
     fn parse_simple(&self) -> i64 {
         let k = self.kind();

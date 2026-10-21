@@ -35,6 +35,8 @@ struct Table {
     buckets: Vec<i64>,
     dead: i64,
     meta: i64,
+    border: i64,
+    weak: i64,
 }
 
 struct Func {
@@ -86,6 +88,8 @@ fn table_new() -> Table {
         buckets: Vec::new(),
         dead: 0,
         meta: -1,
+        border: 0,
+        weak: 0,
     };
 }
 
@@ -145,6 +149,51 @@ impl Interp {
             }
         };
         return id;
+    }
+
+    fn set_weak_mode(&self, tid: i64) -> void {
+        let m = self.tables[tid].meta;
+        if m < 0 {
+            self.tables[tid].weak = 0;
+            return;
+        };
+        let mode = self.table_get_str(m, s_from(STR_PTR("__mode"), 6));
+        if mode.tag != VT_STR {
+            self.tables[tid].weak = 0;
+            return;
+        };
+        let s1 = s_byte(mode.s, 0);
+        if s1 == 107 {
+            self.tables[tid].weak = 1;
+            return;
+        };
+        if s1 == 118 {
+            self.tables[tid].weak = 3;
+            return;
+        };
+        if s1 == 107 + 1 {
+            self.tables[tid].weak = 2;
+            return;
+        };
+        self.tables[tid].weak = 0;
+    }
+
+    fn gc_collect(&self) -> void {
+        let i = 0;
+        while i < (len(self.tables) as i64) {
+            if self.tables[i].weak != 0 {
+                let j = 0;
+                while j < (len(self.tables[i].entries) as i64) {
+                    if self.tables[i].entries[j].val.tag != VT_NIL {
+                        self.tables[i].entries[j].val = v_nil();
+                        self.tables[i].dead = self.tables[i].dead + 1;
+                    };
+                    j = j + 1;
+                }
+                self.tables[i].border = 0;
+            };
+            i = i + 1;
+        }
     }
 
     fn new_table(&self) -> i64 {
@@ -375,19 +424,64 @@ impl Interp {
                     self.tables[tid].dead = self.tables[tid].dead + 1;
                 };
                 self.tables[tid].entries[idx].val = v_nil();
+                self.table_border_del(tid, &key);
             } else {
                 if self.tables[tid].entries[idx].val.tag == VT_NIL {
                     self.tables[tid].dead = self.tables[tid].dead - 1;
                 };
                 let nv = value_new(val.tag, val.i, val.f, val.s);
                 self.tables[tid].entries[idx].val = nv;
+                self.table_border_add(tid, &key);
             };
             return;
         };
         if val.tag != VT_NIL {
             self.t_insert(tid, key, val, h);
             self.mem_used = self.mem_used + 24;
+            self.table_border_add(tid, &key);
         };
+    };
+
+    fn table_key_index(&self, key: &Value) -> i64 {
+        if key.tag == VT_INT {
+            return key.i;
+        };
+        if key.tag == VT_NUM && f_is_exact_int(key.f) {
+            return key.f as i64;
+        };
+        return 0;
+    }
+
+    fn table_border_add(&self, tid: i64, key: &Value) -> void {
+        let k = self.table_key_index(key);
+        if k < 1 {
+            return;
+        };
+        if k == self.tables[tid].border + 1 {
+            self.tables[tid].border = k;
+        };
+    }
+
+    fn table_border_del(&self, tid: i64, key: &Value) -> void {
+        let k = self.table_key_index(key);
+        if k < 1 || k > self.tables[tid].border {
+            return;
+        };
+        let nb = k - 1;
+        let going = true;
+        while going {
+            if nb <= 0 {
+                going = false;
+                continue;
+            };
+            let v = self.table_get(tid, v_int(nb));
+            if v.tag != VT_NIL {
+                going = false;
+                continue;
+            };
+            nb = nb - 1;
+        }
+        self.tables[tid].border = nb;
     }
 
     fn table_get_str(&self, tid: i64, s: u64) -> Value {
@@ -399,7 +493,12 @@ impl Interp {
     }
 
     fn table_len(&self, tid: i64) -> i64 {
-        let n = 0;
+        let b = self.tables[tid].border;
+        let first = self.table_get(tid, v_int(b + 1));
+        if first.tag == VT_NIL {
+            return b;
+        };
+        let n = b + 1;
         let going = true;
         while going {
             let v = self.table_get(tid, v_int(n + 1));
@@ -409,6 +508,7 @@ impl Interp {
             };
             n = n + 1;
         }
+        self.tables[tid].border = n;
         return n;
     }
 

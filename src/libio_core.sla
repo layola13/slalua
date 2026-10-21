@@ -1,0 +1,680 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/fmt.sai"
+@import "sa_std/fs.sai"
+@import "sa_std/env.sai"
+@import "sa_std/io.sai"
+@import "sa_std/ptr.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+fn io_static(ptrv: ptr, n: u64) -> u64 {
+    return s_from(ptrv, n);
+}
+
+fn io_empty() -> u64 {
+    return io_static(STR_PTR(""), 0);
+}
+
+fn io_is_space(c: u8) -> bool {
+    if c == 32 || c == 9 || c == 10 || c == 11 || c == 12 || c == 13 {
+        return true;
+    };
+    return false;
+}
+
+fn io_is_digit(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    return false;
+}
+
+fn io_is_hex(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    if c >= 97 && c <= 102 {
+        return true;
+    };
+    if c >= 65 && c <= 70 {
+        return true;
+    };
+    return false;
+}
+
+fn io_scan_num(s: u64, start: u64) -> u64 {
+    let n = s_len(s);
+    let i = start;
+    if i < n && (s_byte(s, i) == 43 || s_byte(s, i) == 45) {
+        i = i + 1;
+    };
+    let hex = false;
+    if i + 1 < n && s_byte(s, i) == 48 && (s_byte(s, i + 1) == 120 || s_byte(s, i + 1) == 88) {
+        hex = true;
+        i = i + 2;
+        while i < n && io_is_hex(s_byte(s, i)) {
+            i = i + 1;
+        }
+        if i < n && s_byte(s, i) == 46 {
+            i = i + 1;
+            while i < n && io_is_hex(s_byte(s, i)) {
+                i = i + 1;
+            }
+        };
+        if i < n && (s_byte(s, i) == 112 || s_byte(s, i) == 80) {
+            i = i + 1;
+            if i < n && (s_byte(s, i) == 43 || s_byte(s, i) == 45) {
+                i = i + 1;
+            };
+            while i < n && io_is_digit(s_byte(s, i)) {
+                i = i + 1;
+            }
+        };
+        return i;
+    };
+    while i < n && io_is_digit(s_byte(s, i)) {
+        i = i + 1;
+    }
+    if i < n && s_byte(s, i) == 46 {
+        i = i + 1;
+        while i < n && io_is_digit(s_byte(s, i)) {
+            i = i + 1;
+        }
+    };
+    if i < n && (s_byte(s, i) == 101 || s_byte(s, i) == 69) {
+        i = i + 1;
+        if i < n && (s_byte(s, i) == 43 || s_byte(s, i) == 45) {
+            i = i + 1;
+        };
+        while i < n && io_is_digit(s_byte(s, i)) {
+            i = i + 1;
+        }
+    };
+    return i;
+}
+
+fn io_nil_err(msg: ptr, n: u64) -> Vec<Value> {
+    let out = Vec::new();
+    out.push(v_nil());
+    out.push(v_str(s_from(msg, n)));
+    out.push(v_int(13));
+    return out;
+}
+
+impl Interp {
+    fn io_fget(&self, h: i64, name: u64) -> Value {
+        return self.table_get_str(h, name);
+    }
+
+    fn io_fset(&self, h: i64, name: u64, val: Value) -> void {
+        self.table_set_str(h, name, val);
+    }
+
+    fn io_is_file(&self, v: Value) -> bool {
+        if v.tag != VT_TABLE {
+            return false;
+        };
+        let m = self.table_get_str(v.i, s_from(STR_PTR("__file"), 6));
+        if m.tag == VT_BOOL && m.i != 0 {
+            return true;
+        };
+        return false;
+    }
+
+    fn io_file_string(&self, h: i64) -> u64 {
+        let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            return s_from(STR_PTR("file (closed)"), 13);
+        };
+        return s_from(STR_PTR("file (0x0)"), 10);
+    }
+
+    fn io_make_file(&self, mt: i64, kind: i64, path: u64, mode: u64, data: u64) -> i64 {
+        let h = self.new_table();
+        self.tables[h].meta = mt;
+        self.io_fset(h, s_from(STR_PTR("__file"), 6), v_bool(true));
+        self.io_fset(h, s_from(STR_PTR("__closed"), 8), v_bool(false));
+        self.io_fset(h, s_from(STR_PTR("__kind"), 6), v_int(kind));
+        self.io_fset(h, s_from(STR_PTR("__path"), 6), v_str(path));
+        self.io_fset(h, s_from(STR_PTR("__mode"), 6), v_str(mode));
+        self.io_fset(h, s_from(STR_PTR("__data"), 6), v_str(data));
+        self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(0));
+        self.io_fset(h, s_from(STR_PTR("__dirty"), 7), v_bool(false));
+        self.io_fset(h, s_from(STR_PTR("__buf"), 5), v_str(s_from(STR_PTR("full"), 4)));
+        let mr = s_len(mode);
+        let first = 0;
+        if mr > 0 {
+            first = s_byte(mode, 0);
+        };
+        let plus = false;
+        let i: u64 = 0;
+        while i < mr {
+            if s_byte(mode, i) == 43 {
+                plus = true;
+            };
+            i = i + 1;
+        }
+        let readable = first == 114 || plus;
+        let writable = first == 119 || first == 97 || plus;
+        self.io_fset(h, s_from(STR_PTR("__readable"), 10), v_bool(readable));
+        self.io_fset(h, s_from(STR_PTR("__writable"), 10), v_bool(writable));
+        let append = first == 97;
+        self.io_fset(h, s_from(STR_PTR("__append"), 8), v_bool(append));
+        if append {
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(s_len(data) as i64));
+        };
+        return h;
+    }
+
+    fn io_init_table(&self, io: i64) -> void {
+        let methods = self.new_table();
+        self.table_set_str(methods, s_from(STR_PTR("read"), 4), v_builtin(B_IO_FREAD));
+        self.table_set_str(methods, s_from(STR_PTR("write"), 5), v_builtin(B_IO_FWRITE));
+        self.table_set_str(methods, s_from(STR_PTR("lines"), 5), v_builtin(B_IO_FLINES));
+        self.table_set_str(methods, s_from(STR_PTR("close"), 5), v_builtin(B_IO_FCLOSE));
+        self.table_set_str(methods, s_from(STR_PTR("seek"), 4), v_builtin(B_IO_FSEEK));
+        self.table_set_str(methods, s_from(STR_PTR("flush"), 5), v_builtin(B_IO_FFLUSH));
+        self.table_set_str(methods, s_from(STR_PTR("setvbuf"), 7), v_builtin(B_IO_FSETVBUF));
+        let mt = self.new_table();
+        self.table_set_str(mt, s_from(STR_PTR("__index"), 7), v_table(methods));
+        self.table_set_str(mt, s_from(STR_PTR("__name"), 6), v_str(s_from(STR_PTR("FILE*"), 5)));
+        let imt = self.new_table();
+        self.table_set_str(imt, s_from(STR_PTR("__call"), 6), v_builtin(B_IO_ITER));
+        self.table_set_str(io, s_from(STR_PTR("__mt"), 4), v_table(mt));
+        self.table_set_str(io, s_from(STR_PTR("__methods"), 9), v_table(methods));
+        self.table_set_str(io, s_from(STR_PTR("__iter_mt"), 9), v_table(imt));
+        let si = self.io_make_file(mt, 1, s_from(STR_PTR("<stdin>"), 7), s_from(STR_PTR("r"), 1), io_empty());
+        let so = self.io_make_file(mt, 2, s_from(STR_PTR("<stdout>"), 8), s_from(STR_PTR("w"), 1), io_empty());
+        let se = self.io_make_file(mt, 3, s_from(STR_PTR("<stderr>"), 8), s_from(STR_PTR("w"), 1), io_empty());
+        self.table_set_str(io, s_from(STR_PTR("stdin"), 5), v_table(si));
+        self.table_set_str(io, s_from(STR_PTR("stdout"), 6), v_table(so));
+        self.table_set_str(io, s_from(STR_PTR("stderr"), 6), v_table(se));
+        self.table_set_str(io, s_from(STR_PTR("__input"), 7), v_table(si));
+        self.table_set_str(io, s_from(STR_PTR("__output"), 8), v_table(so));
+        self.table_set_str(io, s_from(STR_PTR("write"), 5), v_builtin(B_IO_WRITE));
+        self.table_set_str(io, s_from(STR_PTR("read"), 4), v_builtin(B_IO_READ));
+        self.table_set_str(io, s_from(STR_PTR("lines"), 5), v_builtin(B_IO_LINES));
+        self.table_set_str(io, s_from(STR_PTR("open"), 4), v_builtin(B_IO_OPEN));
+        self.table_set_str(io, s_from(STR_PTR("close"), 5), v_builtin(B_IO_CLOSE));
+        self.table_set_str(io, s_from(STR_PTR("input"), 5), v_builtin(B_IO_INPUT));
+        self.table_set_str(io, s_from(STR_PTR("output"), 6), v_builtin(B_IO_OUTPUT));
+        self.table_set_str(io, s_from(STR_PTR("type"), 4), v_builtin(B_IO_TYPE));
+        self.table_set_str(io, s_from(STR_PTR("tmpfile"), 7), v_builtin(B_IO_TMPFILE));
+        self.table_set_str(io, s_from(STR_PTR("flush"), 5), v_builtin(B_IO_FLUSH));
+        self.table_set_str(io, s_from(STR_PTR("popen"), 5), v_builtin(B_IO_POPEN));
+    }
+
+    fn io_io_table(&self) -> i64 {
+        let v = self.table_get_str(self.globals, s_from(STR_PTR("io"), 2));
+        if v.tag == VT_TABLE {
+            return v.i;
+        };
+        return -1;
+    }
+
+    fn io_current(&self, out: bool) -> i64 {
+        let io = self.io_io_table();
+        if io < 0 {
+            return -1;
+        };
+        let name = s_from(STR_PTR("__input"), 7);
+        if out {
+            name = s_from(STR_PTR("__output"), 8);
+        };
+        let v = self.table_get_str(io, name);
+        if v.tag == VT_TABLE {
+            return v.i;
+        };
+        return -1;
+    }
+
+    fn io_set_current(&self, out: bool, h: i64) -> void {
+        let io = self.io_io_table();
+        if io < 0 {
+            return;
+        };
+        let name = s_from(STR_PTR("__input"), 7);
+        if out {
+            name = s_from(STR_PTR("__output"), 8);
+        };
+        self.table_set_str(io, name, v_table(h));
+    }
+
+    fn io_parse_mode(&self, mode: u64) -> i64 {
+        let n = s_len(mode);
+        if n < 1 {
+            return 0;
+        };
+        let c = s_byte(mode, 0);
+        let base: i64 = 0;
+        if c == 114 {
+            base = 1;
+        } else {
+            if c == 119 {
+                base = 2;
+            } else {
+                if c == 97 {
+                    base = 3;
+                } else {
+                    return 0;
+                };
+            };
+        };
+        let i: u64 = 1;
+        let plus = false;
+        if i < n && s_byte(mode, i) == 43 {
+            plus = true;
+            i = i + 1;
+        };
+        if i < n && s_byte(mode, i) == 98 {
+            i = i + 1;
+        };
+        if i < n {
+            return 0;
+        };
+        if plus {
+            return base + 4;
+        };
+        return base;
+    };
+
+    fn io_read_disk(&self, path: u64) -> (bool, u64) {
+        let p = sa_fmt_buffer_data(path);
+        let n = s_len(path);
+        let buf = sa_fs_read_file(p, n, 67108864);
+        if buf == 0 {
+            return (false, io_empty());
+        };
+        let dp: ptr = sa_fs_read_buffer_data(buf);
+        let s = s_from(dp, sa_fs_read_buffer_len(buf));
+        let st = sa_fs_read_buffer_free(buf);
+        return (true, s);
+    }
+
+    fn io_truncate_disk(&self, path: u64) -> bool {
+        let p = sa_fmt_buffer_data(path);
+        let n = s_len(path);
+        let e = io_empty();
+        let ep = sa_fmt_buffer_data(e);
+        return sa_fs_write_file(p, n, ep, 0) == 0;
+    }
+
+    fn io_open_path(&self, path: u64, mode: u64) -> Value {
+        let pm = self.io_parse_mode(mode);
+        if pm == 0 {
+            return v_nil();
+        };
+        let kind = pm % 4;
+        let plus = pm >= 4;
+        let trunc = kind == 2;
+        let append = kind == 3;
+        let data = io_empty();
+        if trunc {
+            if self.io_truncate_disk(path) == false {
+                return v_nil();
+            };
+        } else {
+            let (ok, got) = self.io_read_disk(path);
+            if ok {
+                data = got;
+            } else {
+                if append {
+                    if self.io_truncate_disk(path) == false {
+                        return v_nil();
+                    };
+                } else {
+                    return v_nil();
+                };
+            };
+        };
+        let io = self.io_io_table();
+        let mt: i64 = 0;
+        if io >= 0 {
+            let mv = self.table_get_str(io, s_from(STR_PTR("__mt"), 4));
+            if mv.tag == VT_TABLE {
+                mt = mv.i;
+            };
+        };
+        return v_table(self.io_make_file(mt, 0, path, mode, data));
+    };
+
+    fn io_write_bytes_std(&self, kind: i64, text: u64) -> bool {
+        let p = sa_fmt_buffer_data(text);
+        let n = s_len(text);
+        if kind == 2 {
+            s_write(text);
+            return true;
+        };
+        let h = sa_io_stderr();
+        return sa_io_write_all(h, p, n) == 0;
+    }
+
+    fn io_file_flush(&self, h: i64) -> Vec<Value> {
+        let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            return io_nil_err(STR_PTR("attempt to use a closed file"), 28);
+        };
+        let kind = self.io_fget(h, s_from(STR_PTR("__kind"), 6)).i;
+        if kind != 0 {
+            return bs_one(v_bool(true));
+        };
+        let w = self.io_fget(h, s_from(STR_PTR("__writable"), 10));
+        if w.tag != VT_BOOL || w.i == 0 {
+            return bs_one(v_bool(true));
+        };
+        let d = self.io_fget(h, s_from(STR_PTR("__dirty"), 7));
+        if d.tag != VT_BOOL || d.i == 0 {
+            return bs_one(v_bool(true));
+        };
+        let path = self.io_fget(h, s_from(STR_PTR("__path"), 6)).s;
+        let data = self.io_fget(h, s_from(STR_PTR("__data"), 6)).s;
+        let p = sa_fmt_buffer_data(path);
+        let pn = s_len(path);
+        let dp = sa_fmt_buffer_data(data);
+        let dn = s_len(data);
+        let st = sa_fs_write_file(p, pn, dp, dn);
+        if st != 0 {
+            return io_nil_err(STR_PTR("write error"), 11);
+        };
+        self.io_fset(h, s_from(STR_PTR("__dirty"), 7), v_bool(false));
+        return bs_one(v_bool(true));
+    }
+
+    fn io_file_write(&self, h: i64, args: &Vec<Value>, start: i64) -> Vec<Value> {
+        let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            return io_nil_err(STR_PTR("attempt to use a closed file"), 28);
+        };
+        let kind = self.io_fget(h, s_from(STR_PTR("__kind"), 6)).i;
+        if kind != 0 {
+            let i = start;
+            while i < (len(args) as i64) {
+                let text = v_to_string(args[i]);
+                let ok = self.io_write_bytes_std(kind, text);
+                if ok == false {
+                    return io_nil_err(STR_PTR("write error"), 11);
+                };
+                i = i + 1;
+            }
+            return bs_one(v_table(h));
+        };
+        let w = self.io_fget(h, s_from(STR_PTR("__writable"), 10));
+        if w.tag != VT_BOOL || w.i == 0 {
+            return io_nil_err(STR_PTR("file is not writable"), 20);
+        };
+        let data = self.io_fget(h, s_from(STR_PTR("__data"), 6)).s;
+        let has_nl = false;
+        let i = start;
+        while i < (len(args) as i64) {
+            let text = v_to_string(args[i]);
+            let tn = s_len(text);
+            let j: u64 = 0;
+            while j < tn {
+                if s_byte(text, j) == 10 {
+                    has_nl = true;
+                };
+                j = j + 1;
+            }
+            let append = self.io_fget(h, s_from(STR_PTR("__append"), 8));
+            let pos = self.io_fget(h, s_from(STR_PTR("__pos"), 5)).i;
+            let n = s_len(data);
+            let p: i64 = pos;
+            if append.tag == VT_BOOL && append.i != 0 {
+                p = n as i64;
+            };
+            let out = io_empty();
+            if p < 0 {
+                p = 0;
+            };
+            if (p as u64) > n {
+                out = data;
+                let k = n;
+                while k < (p as u64) {
+                    out = s_cat(out, s_char(0));
+                    k = k + 1;
+                }
+            } else {
+                if p > 0 {
+                    out = s_slice(data, 0, p as u64);
+                };
+            };
+            out = s_cat(out, text);
+            let tail = (p as u64) + tn;
+            if tail < n {
+                out = s_cat(out, s_slice(data, tail, n - tail));
+            };
+            data = out;
+            self.io_fset(h, s_from(STR_PTR("__data"), 6), v_str(data));
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int((p as i64) + (tn as i64)));
+            self.io_fset(h, s_from(STR_PTR("__dirty"), 7), v_bool(true));
+            i = i + 1;
+        }
+        let bt = self.io_fget(h, s_from(STR_PTR("__buf"), 5));
+        if bt.tag == VT_STR {
+            if s_eq_lit(bt.s, STR_PTR("no"), 2) {
+                let r = self.io_file_flush(h);
+                if r[0].tag == VT_NIL {
+                    return r;
+                };
+            } else {
+                if s_eq_lit(bt.s, STR_PTR("line"), 4) && has_nl {
+                    let r = self.io_file_flush(h);
+                    if r[0].tag == VT_NIL {
+                        return r;
+                    };
+                };
+            };
+        };
+        return bs_one(v_table(h));
+    };
+
+    fn io_read_one(&self, h: i64, fmt: Value) -> (bool, Value) {
+        let data = self.io_fget(h, s_from(STR_PTR("__data"), 6)).s;
+        let n = s_len(data);
+        let pos = self.io_fget(h, s_from(STR_PTR("__pos"), 5)).i;
+        let p: u64 = 0;
+        if pos > 0 {
+            p = pos as u64;
+        };
+        if fmt.tag == VT_INT || fmt.tag == VT_NUM {
+            let want = v_as_num(fmt) as i64;
+            if want < 0 {
+                self.fail_str(STR_PTR("invalid format"), 14);
+                return (false, v_nil());
+            };
+            if want == 0 {
+                if p >= n {
+                    return (false, v_nil());
+                };
+                return (true, v_str(io_empty()));
+            };
+            if p >= n {
+                return (false, v_nil());
+            };
+            let take = want as u64;
+            if p + take > n {
+                take = n - p;
+            };
+            let s = s_slice(data, p, take);
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int((p + take) as i64));
+            return (true, v_str(s));
+        };
+        if fmt.tag != VT_STR {
+            self.fail_str(STR_PTR("invalid format"), 14);
+            return (false, v_nil());
+        };
+        let f = fmt.s;
+        let f0 = 0;
+        if s_len(f) > 0 {
+            f0 = s_byte(f, 0);
+        };
+        if f0 == 42 && s_len(f) > 1 {
+            f = s_slice(f, 1, s_len(f) - 1);
+            f0 = s_byte(f, 0);
+        };
+        if f0 == 97 {
+            let s = s_slice(data, p, n - p);
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(n as i64));
+            return (true, v_str(s));
+        };
+        if f0 == 108 || f0 == 76 {
+            if p >= n {
+                return (false, v_nil());
+            };
+            let q = p;
+            let found = false;
+            while q < n {
+                if s_byte(data, q) == 10 {
+                    found = true;
+                    q = q + 1;
+                    break;
+                };
+                q = q + 1;
+            }
+            let end = q;
+            if f0 == 108 && found {
+                end = q - 1;
+            };
+            let s = s_slice(data, p, end - p);
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(q as i64));
+            return (true, v_str(s));
+        };
+        if f0 == 110 {
+            let q = p;
+            while q < n && io_is_space(s_byte(data, q)) {
+                q = q + 1;
+            }
+            if q >= n {
+                self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(n as i64));
+                return (false, v_nil());
+            };
+            let e = io_scan_num(data, q);
+            if e == q {
+                self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(q as i64));
+                return (false, v_nil());
+            };
+            let text = s_slice(data, q, e - q);
+            let num = self.bi_tonumber(v_str(text));
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(e as i64));
+            if num.tag == VT_NIL {
+                return (false, v_nil());
+            };
+            return (true, num);
+        };
+        self.fail_str(STR_PTR("invalid format"), 14);
+        return (false, v_nil());
+    }
+
+    fn io_read_many(&self, h: i64, args: &Vec<Value>, start: i64) -> Vec<Value> {
+        let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            self.fail_str(STR_PTR("attempt to use a closed file"), 28);
+            return Vec::new();
+        };
+        let r = self.io_fget(h, s_from(STR_PTR("__readable"), 10));
+        if r.tag != VT_BOOL || r.i == 0 {
+            return io_nil_err(STR_PTR("file is not readable"), 20);
+        };
+        let out = Vec::new();
+        let cnt = (len(args) as i64) - start;
+        if cnt <= 0 {
+            let (ok, v) = self.io_read_one(h, v_str(s_from(STR_PTR("l"), 1)));
+            if ok {
+                out.push(v);
+            };
+            return out;
+        };
+        let i = start;
+        while i < (len(args) as i64) {
+            let (ok, v) = self.io_read_one(h, args[i]);
+            if self.ctrl == CTL_ERROR {
+                return Vec::new();
+            };
+            if ok == false {
+                return out;
+            };
+            out.push(v);
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn io_make_iter(&self, h: i64, args: &Vec<Value>, start: i64, autoclose: bool) -> Value {
+        let io = self.io_io_table();
+        let imt: i64 = 0;
+        if io >= 0 {
+            let mv = self.table_get_str(io, s_from(STR_PTR("__iter_mt"), 9));
+            if mv.tag == VT_TABLE {
+                imt = mv.i;
+            };
+        };
+        let it = self.new_table();
+        self.tables[it].meta = imt;
+        self.io_fset(it, s_from(STR_PTR("__it_file"), 9), v_int(h));
+        self.io_fset(it, s_from(STR_PTR("__it_done"), 9), v_bool(false));
+        self.io_fset(it, s_from(STR_PTR("__it_auto"), 9), v_bool(autoclose));
+        let cnt = (len(args) as i64) - start;
+        if cnt > 8 {
+            self.fail_str(STR_PTR("too many arguments"), 18);
+            return v_nil();
+        };
+        self.io_fset(it, s_from(STR_PTR("__it_n"), 6), v_int(cnt));
+        let i = start;
+        let k = 0;
+        while i < (len(args) as i64) {
+            if k == 0 {
+                self.io_fset(it, s_from(STR_PTR("__it_f0"), 7), args[i]);
+            } else {
+                if k == 1 {
+                    self.io_fset(it, s_from(STR_PTR("__it_f1"), 7), args[i]);
+                } else {
+                    if k == 2 {
+                        self.io_fset(it, s_from(STR_PTR("__it_f2"), 7), args[i]);
+                    } else {
+                        if k == 3 {
+                            self.io_fset(it, s_from(STR_PTR("__it_f3"), 7), args[i]);
+                        } else {
+                            self.io_fset(it, s_from(STR_PTR("__it_f4"), 7), args[i]);
+                        };
+                    };
+                };
+            };
+            i = i + 1;
+            k = k + 1;
+        }
+        return v_table(it);
+    };
+
+    fn io_iter_formats(&self, it: i64) -> Vec<Value> {
+        let out = Vec::new();
+        let n = self.io_fget(it, s_from(STR_PTR("__it_n"), 6)).i;
+        let k = 0;
+        while k < n {
+            if k == 0 {
+                out.push(self.io_fget(it, s_from(STR_PTR("__it_f0"), 7)));
+            } else {
+                if k == 1 {
+                    out.push(self.io_fget(it, s_from(STR_PTR("__it_f1"), 7)));
+                } else {
+                    if k == 2 {
+                        out.push(self.io_fget(it, s_from(STR_PTR("__it_f2"), 7)));
+                    } else {
+                        if k == 3 {
+                            out.push(self.io_fget(it, s_from(STR_PTR("__it_f3"), 7)));
+                        } else {
+                            out.push(self.io_fget(it, s_from(STR_PTR("__it_f4"), 7)));
+                        };
+                    };
+                };
+            };
+            k = k + 1;
+        }
+        return out;
+    }
+
+
+}

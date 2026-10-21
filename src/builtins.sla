@@ -12,6 +12,8 @@
 @import "src/libstring.sla"
 @import "src/libtable.sla"
 @import "src/libutf8.sla"
+@import "src/libos.sla"
+@import "src/libio.sla"
 @import "src/libdebug.sla"
 
 fn digit_val(c: u8) -> i64 {
@@ -62,14 +64,7 @@ impl Interp {
         self.table_set_str(co, bs_str(STR_PTR("run"), 3), v_builtin(B_CORO_UNSUPPORTED));
         self.table_set_str(self.globals, bs_str(STR_PTR("coroutine"), 9), v_table(co));
         let io = self.new_table();
-        self.table_set_str(io, bs_str(STR_PTR("stdin"), 5), v_userdata(1));
-        self.table_set_str(io, bs_str(STR_PTR("stdout"), 6), v_userdata(2));
-        self.table_set_str(io, bs_str(STR_PTR("stderr"), 6), v_userdata(3));
-        self.table_set_str(io, bs_str(STR_PTR("write"), 5), v_builtin(B_IO_WRITE));
-        self.table_set_str(io, bs_str(STR_PTR("read"), 4), v_builtin(B_IO_UNSUPPORTED));
-        self.table_set_str(io, bs_str(STR_PTR("lines"), 5), v_builtin(B_IO_UNSUPPORTED));
-        self.table_set_str(io, bs_str(STR_PTR("open"), 4), v_builtin(B_IO_UNSUPPORTED));
-        self.table_set_str(io, bs_str(STR_PTR("close"), 5), v_builtin(B_IO_UNSUPPORTED));
+        self.io_init_table(io);
         self.table_set_str(self.globals, bs_str(STR_PTR("io"), 2), v_table(io));
         let ut = self.new_table();
         self.table_set_str(ut, bs_str(STR_PTR("char"), 4), v_builtin(B_UTF8_CHAR));
@@ -170,8 +165,7 @@ impl Interp {
         self.table_set_str(mt, bs_str(STR_PTR("mininteger"), 10), v_int((0 - 9223372036854775807) - 1));
         self.table_set_str(self.globals, bs_str(STR_PTR("math"), 4), v_table(mt));
         let ot = self.new_table();
-        self.table_set_str(ot, bs_str(STR_PTR("clock"), 5), v_builtin(B_OS_CLOCK));
-        self.table_set_str(ot, bs_str(STR_PTR("time"), 4), v_builtin(B_OS_TIME));
+        self.os_init_table(ot);
         self.table_set_str(self.globals, bs_str(STR_PTR("os"), 2), v_table(ot));
         self.table_set_str(loaded, bs_str(STR_PTR("_G"), 2), v_table(self.globals));
         self.table_set_str(loaded, bs_str(STR_PTR("package"), 7), v_table(pkg));
@@ -203,10 +197,18 @@ impl Interp {
                 self.fail_str(STR_PTR("bad argument #1 to 'type' (value expected)"), 42);
                 return Vec::new();
             };
-            return bs_one(v_str(v_type_name(bs_arg(&args, 0))));
+            let tv = bs_arg(&args, 0);
+            if self.io_is_file(tv) {
+                return bs_one(v_str(s_from(STR_PTR("userdata"), 8)));
+            };
+            return bs_one(v_str(v_type_name(tv)));
         };
         if id == B_TOSTRING {
-            return bs_one(v_str(v_to_string(bs_arg(&args, 0))));
+            let tv = bs_arg(&args, 0);
+            if self.io_is_file(tv) {
+                return bs_one(v_str(self.io_file_string(tv.i)));
+            };
+            return bs_one(v_str(v_to_string(tv)));
         };
         if id == B_TONUMBER {
             if len(args) > 1 {
@@ -426,16 +428,24 @@ impl Interp {
                 } else {
                     self.tables[t.i].meta = -1;
                 };
+                self.set_weak_mode(t.i);
             };
             return bs_one(t);
         };
         if id >= B_S_LEN && id <= B_S_GSUB {
             return self.builtin_string(id, &args);
         };
-        if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_PKG_SEARCHPATH || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
+        if id == B_OS_CLOCK || id == B_OS_TIME || (id >= B_OS_GETENV && id <= B_OS_EXIT) {
+            return self.builtin_os(id, &args);
+        };
+        if id == B_IO_WRITE || (id >= B_IO_READ && id <= B_IO_POPEN) {
+            return self.builtin_io(id, &args);
+        };
+        if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_REQUIRE || id == B_PKG_SEARCHPATH || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_UNSUPPORTED {
             return self.builtin_aux(id, &args);
         };
         if id == B_GC {
+            self.gc_collect();
             if len(args) > 0 {
                 let a = args[0];
                 if a.tag == VT_STR {
@@ -505,7 +515,7 @@ impl Interp {
             return self.sm_unm(&args);
         };
         return Vec::new();
-    }
+    };
 
     fn bi_load(&self, args: &Vec<Value>) -> Vec<Value> {
         let sv = bs_arg(args, 0);
@@ -691,7 +701,7 @@ impl Interp {
             return v_int(0 - val);
         };
         return v_int(val);
-    }
+    };
 
     fn bi_tonumber_base(&self, v: Value, basev: Value) -> Value {
         let base = self.bi_int(basev, 10);
@@ -740,7 +750,7 @@ impl Interp {
             return v_int(0 - val);
         };
         return v_int(val);
-    }
+    };
 
     fn bi_tonumber_hex(&self, s: u64, from: u64, neg: bool) -> Value {
         let n = s_len(s);
@@ -806,4 +816,4 @@ impl Interp {
         return v_int(iv);
     }
 
-}
+};

@@ -189,7 +189,7 @@ impl Interp {
             i = i + 1;
         }
         return out;
-    }
+    };
 
     fn make_func(&self, env: i64, id: i64) -> i64 {
         let nd = self.nd(id);
@@ -669,7 +669,7 @@ impl Interp {
             return v_bool(c == 0 || c == 1);
         };
         return self.num_bin(nd.n, a, b);
-    }
+    };
 
     fn eval_un(&self, env: i64, nd: Node) -> Value {
         let v = self.eval(env, nd.a);
@@ -813,4 +813,4 @@ impl Interp {
         self.depth = self.depth - 1;
         return out;
     }
-}
+};

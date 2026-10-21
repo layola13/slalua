@@ -1,0 +1,535 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/fmt.sai"
+@import "sa_std/fs.sai"
+@import "sa_std/env.sai"
+@import "sa_std/process.sai"
+@import "sa_std/time.sai"
+@import "sa_std/ptr.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+@import "src/libos_ext.sai"
+
+struct OsArg {
+    data: ptr,
+    len: u64,
+}
+
+fn os_tmp_dir() -> u64 {
+    let tb = sa_env_temp_dir();
+    if tb == 0 {
+        return s_from(STR_PTR("/tmp"), 4);
+    };
+    let dp: ptr = sa_env_buffer_data(tb);
+    return s_from(dp, sa_env_buffer_len(tb));
+}
+
+fn os_empty() -> u64 {
+    return s_from(STR_PTR(""), 0);
+}
+
+fn os_zpad(v: i64, width: u64) -> u64 {
+    let s = s_i64(v);
+    let n = s_len(s);
+    if n >= width {
+        return s;
+    };
+    let out = os_empty();
+    let k = n;
+    while k < width {
+        out = s_cat(out, s_from(STR_PTR("0"), 1));
+        k = k + 1;
+    }
+    return s_cat(out, s);
+}
+
+fn os_two(v: i64) -> u64 {
+    return os_zpad(v, 2);
+}
+
+fn os_three(v: i64) -> u64 {
+    return os_zpad(v, 3);
+}
+
+fn os_month_name(m: i64) -> u64 {
+    if m == 0 { return s_from(STR_PTR("January"), 7); };
+    if m == 1 { return s_from(STR_PTR("February"), 8); };
+    if m == 2 { return s_from(STR_PTR("March"), 5); };
+    if m == 3 { return s_from(STR_PTR("April"), 5); };
+    if m == 4 { return s_from(STR_PTR("May"), 3); };
+    if m == 5 { return s_from(STR_PTR("June"), 4); };
+    if m == 6 { return s_from(STR_PTR("July"), 4); };
+    if m == 7 { return s_from(STR_PTR("August"), 6); };
+    if m == 8 { return s_from(STR_PTR("September"), 9); };
+    if m == 9 { return s_from(STR_PTR("October"), 7); };
+    if m == 10 { return s_from(STR_PTR("November"), 8); };
+    return s_from(STR_PTR("December"), 8);
+}
+
+fn os_month_abbr(m: i64) -> u64 {
+    if m == 0 { return s_from(STR_PTR("Jan"), 3); };
+    if m == 1 { return s_from(STR_PTR("Feb"), 3); };
+    if m == 2 { return s_from(STR_PTR("Mar"), 3); };
+    if m == 3 { return s_from(STR_PTR("Apr"), 3); };
+    if m == 4 { return s_from(STR_PTR("May"), 3); };
+    if m == 5 { return s_from(STR_PTR("Jun"), 3); };
+    if m == 6 { return s_from(STR_PTR("Jul"), 3); };
+    if m == 7 { return s_from(STR_PTR("Aug"), 3); };
+    if m == 8 { return s_from(STR_PTR("Sep"), 3); };
+    if m == 9 { return s_from(STR_PTR("Oct"), 3); };
+    if m == 10 { return s_from(STR_PTR("Nov"), 3); };
+    return s_from(STR_PTR("Dec"), 3);
+}
+
+fn os_day_name(w: i64) -> u64 {
+    if w == 0 { return s_from(STR_PTR("Sunday"), 6); };
+    if w == 1 { return s_from(STR_PTR("Monday"), 6); };
+    if w == 2 { return s_from(STR_PTR("Tuesday"), 7); };
+    if w == 3 { return s_from(STR_PTR("Wednesday"), 9); };
+    if w == 4 { return s_from(STR_PTR("Thursday"), 8); };
+    if w == 5 { return s_from(STR_PTR("Friday"), 6); };
+    return s_from(STR_PTR("Saturday"), 8);
+}
+
+fn os_day_abbr(w: i64) -> u64 {
+    if w == 0 { return s_from(STR_PTR("Sun"), 3); };
+    if w == 1 { return s_from(STR_PTR("Mon"), 3); };
+    if w == 2 { return s_from(STR_PTR("Tue"), 3); };
+    if w == 3 { return s_from(STR_PTR("Wed"), 3); };
+    if w == 4 { return s_from(STR_PTR("Thu"), 3); };
+    if w == 5 { return s_from(STR_PTR("Fri"), 3); };
+    return s_from(STR_PTR("Sat"), 3);
+}
+
+fn os_is_leap(y: i64) -> bool {
+    if y % 4 != 0 {
+        return false;
+    };
+    if y % 100 != 0 {
+        return true;
+    };
+    return y % 400 == 0;
+}
+
+fn os_yday(y: i64, m: i64, d: i64) -> i64 {
+    let days = 0;
+    if m > 0 { days = days + 31; };
+    if m > 1 {
+        if os_is_leap(y) { days = days + 29; } else { days = days + 28; };
+    };
+    if m > 2 { days = days + 31; };
+    if m > 3 { days = days + 30; };
+    if m > 4 { days = days + 31; };
+    if m > 5 { days = days + 30; };
+    if m > 6 { days = days + 31; };
+    if m > 7 { days = days + 31; };
+    if m > 8 { days = days + 30; };
+    if m > 9 { days = days + 31; };
+    if m > 10 { days = days + 30; };
+    if m > 11 { days = days + 31; };
+    return days + d;
+}
+
+fn os_nil_err(msg: ptr, n: u64) -> Vec<Value> {
+    let out = Vec::new();
+    out.push(v_nil());
+    out.push(v_str(s_from(msg, n)));
+    out.push(v_int(13));
+    return out;
+}
+
+impl Interp {
+    fn os_init_table(&self, ot: i64) -> void {
+        let e = s_from(STR_PTR("getenv"), 6);
+        self.table_set_str(ot, e, v_builtin(B_OS_GETENV));
+        self.table_set_str(ot, s_from(STR_PTR("time"), 4), v_builtin(B_OS_TIME));
+        self.table_set_str(ot, s_from(STR_PTR("clock"), 5), v_builtin(B_OS_CLOCK));
+        self.table_set_str(ot, s_from(STR_PTR("date"), 4), v_builtin(B_OS_DATE));
+        self.table_set_str(ot, s_from(STR_PTR("difftime"), 8), v_builtin(B_OS_DIFFTIME));
+        self.table_set_str(ot, s_from(STR_PTR("setlocale"), 9), v_builtin(B_OS_SETLOCALE));
+        self.table_set_str(ot, s_from(STR_PTR("tmpname"), 7), v_builtin(B_OS_TMPNAME));
+        self.table_set_str(ot, s_from(STR_PTR("remove"), 6), v_builtin(B_OS_REMOVE));
+        self.table_set_str(ot, s_from(STR_PTR("rename"), 6), v_builtin(B_OS_RENAME));
+        self.table_set_str(ot, s_from(STR_PTR("execute"), 7), v_builtin(B_OS_EXECUTE));
+        self.table_set_str(ot, s_from(STR_PTR("exit"), 4), v_builtin(B_OS_EXIT));
+    }
+
+    fn os_spec_text(&self, d: u8, year: i64, mon: i64, day: i64, hour: i64, minute: i64, sec: i64, wday: i64, yd: i64) -> u64 {
+        if d == 89 {
+            return os_zpad(year, 4);
+        };
+        if d == 109 {
+            return os_two(mon + 1);
+        };
+        if d == 100 {
+            return os_two(day);
+        };
+        if d == 72 {
+            return os_two(hour);
+        };
+        if d == 73 {
+            let h12 = hour % 12;
+            if h12 == 0 {
+                h12 = 12;
+            };
+            return os_two(h12);
+        };
+        if d == 77 {
+            return os_two(minute);
+        };
+        if d == 83 {
+            return os_two(sec);
+        };
+        if d == 119 {
+            return s_i64(wday);
+        };
+        if d == 106 {
+            return os_three(yd);
+        };
+        if d == 97 {
+            return os_day_abbr(wday);
+        };
+        if d == 65 {
+            return os_day_name(wday);
+        };
+        if d == 98 || d == 104 {
+            return os_month_abbr(mon);
+        };
+        if d == 66 {
+            return os_month_name(mon);
+        };
+        if d == 112 {
+            if hour < 12 {
+                return s_from(STR_PTR("AM"), 2);
+            };
+            return s_from(STR_PTR("PM"), 2);
+        };
+        if d == 121 {
+            return os_two(year % 100);
+        };
+        if d == 67 {
+            return os_zpad(year / 100, 2);
+        };
+        if d == 110 {
+            return s_char(10);
+        };
+        if d == 116 {
+            return s_char(9);
+        };
+        if d == 68 {
+            let p1 = s_cat(os_two(mon + 1), s_from(STR_PTR("/"), 1));
+            let p2 = s_cat(p1, os_two(day));
+            return s_cat(p2, s_from(STR_PTR("/"), 1));
+        };
+        if d == 70 {
+            let p1 = s_cat(os_zpad(year, 4), s_from(STR_PTR("-"), 1));
+            let p2 = s_cat(p1, os_two(mon + 1));
+            let p3 = s_cat(p2, s_from(STR_PTR("-"), 1));
+            return s_cat(p3, os_two(day));
+        };
+        if d == 84 || d == 88 {
+            let p1 = s_cat(os_two(hour), s_from(STR_PTR(":"), 1));
+            let p2 = s_cat(p1, os_two(minute));
+            let p3 = s_cat(p2, s_from(STR_PTR(":"), 1));
+            return s_cat(p3, os_two(sec));
+        };
+        if d == 90 {
+            return s_from(STR_PTR("UTC"), 3);
+        };
+        return os_empty();
+    }
+
+    fn os_format(&self, fmt: u64, ms: i64) -> u64 {
+        let n = s_len(fmt);
+        let out = os_empty();
+        let year = sa_time_get_full_year(ms);
+        let mon = sa_time_get_month(ms);
+        let day = sa_time_get_date(ms);
+        let hour = sa_time_get_hours(ms);
+        let minute = sa_time_get_minutes(ms);
+        let sec = sa_time_get_seconds(ms);
+        let wday = sa_time_get_day(ms);
+        let yd = os_yday(year, mon, day);
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(fmt, i);
+            if c != 37 {
+                out = s_cat(out, s_char(c));
+                i = i + 1;
+                continue;
+            };
+            let i1 = i + 1;
+            if i1 >= n {
+                self.fail_str(STR_PTR("invalid conversion specifier '%'"), 32);
+                return out;
+            };
+            let d = s_byte(fmt, i1);
+            let i2 = i1 + 1;
+            if d == 69 || d == 79 {
+                if i2 >= n {
+                    self.fail_str(STR_PTR("invalid conversion specifier '%'"), 32);
+                    return out;
+                };
+                d = s_byte(fmt, i2);
+            };
+            if d == 37 {
+                out = s_cat(out, s_from(STR_PTR("%"), 1));
+                i = i + 1;
+                continue;
+            };
+            if d >= 48 && d <= 57 {
+                self.fail_str(STR_PTR("invalid conversion specifier '%'"), 32);
+                return out;
+            };
+            let piece = self.os_spec_text(d, year, mon, day, hour, minute, sec, wday, yd);
+            out = s_cat(out, piece);
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn os_time_table(&self, t: Value) -> Value {
+        let yv = self.table_get(t.i, v_str(s_from(STR_PTR("year"), 4)));
+        let mv = self.table_get(t.i, v_str(s_from(STR_PTR("month"), 5)));
+        let dv = self.table_get(t.i, v_str(s_from(STR_PTR("day"), 3)));
+        if yv.tag == VT_NIL {
+            self.fail_str(STR_PTR("field 'year' missing in date table"), 34);
+            return v_nil();
+        };
+        if mv.tag == VT_NIL {
+            self.fail_str(STR_PTR("field 'month' missing in date table"), 35);
+            return v_nil();
+        };
+        if dv.tag == VT_NIL {
+            self.fail_str(STR_PTR("field 'day' missing in date table"), 33);
+            return v_nil();
+        };
+        if v_is_number(yv) == false || v_is_number(mv) == false || v_is_number(dv) == false {
+            self.fail_str(STR_PTR("field is not an integer"), 23);
+            return v_nil();
+        };
+        let hv = self.table_get(t.i, v_str(s_from(STR_PTR("hour"), 4)));
+        let niv = self.table_get(t.i, v_str(s_from(STR_PTR("min"), 3)));
+        let sv = self.table_get(t.i, v_str(s_from(STR_PTR("sec"), 3)));
+        let hour: i64 = 12;
+        let minute: i64 = 0;
+        let sec: i64 = 0;
+        if hv.tag != VT_NIL {
+            if v_is_number(hv) == false || f_is_exact_int(v_as_num(hv)) == false {
+                self.fail_str(STR_PTR("field 'hour' is not an integer"), 30);
+                return v_nil();
+            };
+            hour = v_as_num(hv) as i64;
+        };
+        if niv.tag != VT_NIL {
+            if v_is_number(niv) == false || f_is_exact_int(v_as_num(niv)) == false {
+                self.fail_str(STR_PTR("field 'min' is not an integer"), 29);
+                return v_nil();
+            };
+            minute = v_as_num(niv) as i64;
+        };
+        if sv.tag != VT_NIL {
+            if v_is_number(sv) == false || f_is_exact_int(v_as_num(sv)) == false {
+                self.fail_str(STR_PTR("field 'sec' is not an integer"), 29);
+                return v_nil();
+            };
+            sec = v_as_num(sv) as i64;
+        };
+        let ms: i64 = 0;
+        ms = sa_time_set_field(ms, 0, v_as_num(yv) as i64);
+        ms = sa_time_set_field(ms, 1, (v_as_num(mv) as i64) - 1);
+        ms = sa_time_set_field(ms, 2, v_as_num(dv) as i64);
+        ms = sa_time_set_field(ms, 3, hour);
+        ms = sa_time_set_field(ms, 4, minute);
+        ms = sa_time_set_field(ms, 5, sec);
+        return v_int(ms / 1000);
+    }
+
+    fn os_do_getenv(&self, args: &Vec<Value>) -> Vec<Value> {
+        let a = bs_arg(args, 0);
+        if a.tag != VT_STR {
+            return bs_one(v_nil());
+        };
+        let p = sa_fmt_buffer_data(a.s);
+        let n = s_len(a.s);
+        if sa_env_has(p, n) != 0 {
+            return bs_one(v_nil());
+        };
+        let buf = sa_env_get(p, n);
+        if buf == 0 {
+            return bs_one(v_nil());
+        };
+        let dp: ptr = sa_env_buffer_data(buf);
+        let s = s_from(dp, sa_env_buffer_len(buf));
+        let st = sa_env_buffer_free(buf);
+        return bs_one(v_str(s));
+    }
+
+    fn os_do_date(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = bs_arg(args, 0);
+        let fmt = s_from(STR_PTR("%c"), 2);
+        if f.tag == VT_STR {
+            fmt = f.s;
+        };
+        let ms = 0;
+        let use_now = true;
+        let tv = bs_arg(args, 1);
+        if v_is_number(tv) {
+            ms = (v_as_num(tv) as i64) * 1000;
+            use_now = false;
+        };
+        if use_now {
+            ms = sa_time_unix_ms();
+        };
+        if s_len(fmt) > 0 && s_byte(fmt, 0) == 33 {
+            fmt = s_slice(fmt, 1, s_len(fmt) - 1);
+        };
+        if s_eq_lit(fmt, STR_PTR("*t"), 2) {
+            let t = self.new_table();
+            let year = sa_time_get_full_year(ms);
+            let mon = sa_time_get_month(ms);
+            let day = sa_time_get_date(ms);
+            self.table_set_str(t, s_from(STR_PTR("year"), 4), v_int(year));
+            self.table_set_str(t, s_from(STR_PTR("month"), 5), v_int(mon + 1));
+            self.table_set_str(t, s_from(STR_PTR("day"), 3), v_int(day));
+            self.table_set_str(t, s_from(STR_PTR("hour"), 4), v_int(sa_time_get_hours(ms)));
+            self.table_set_str(t, s_from(STR_PTR("min"), 3), v_int(sa_time_get_minutes(ms)));
+            self.table_set_str(t, s_from(STR_PTR("sec"), 3), v_int(sa_time_get_seconds(ms)));
+            self.table_set_str(t, s_from(STR_PTR("wday"), 4), v_int(sa_time_get_day(ms) + 1));
+            self.table_set_str(t, s_from(STR_PTR("yday"), 4), v_int(os_yday(year, mon, day)));
+            self.table_set_str(t, s_from(STR_PTR("isdst"), 5), v_bool(false));
+            return bs_one(v_table(t));
+        };
+        let out = self.os_format(fmt, ms);
+        return bs_one(v_str(out));
+    }
+
+    fn os_do_tmpname(&self) -> Vec<Value> {
+        let key = s_from(STR_PTR("__os_tmp_ctr"), 12);
+        let cv = self.table_get_str(self.globals, key);
+        let c = self.bi_int(cv, 0) + 1;
+        self.table_set_str(self.globals, key, v_int(c));
+        let dir = os_tmp_dir();
+        let name = s_from(STR_PTR("/slalua_tmp_"), 12);
+        let path = s_cat(s_cat(dir, name), s_cat(s_i64(sa_std_process_id() as i64), s_cat(s_from(STR_PTR("_"), 1), s_i64(c))));
+        let p = sa_fmt_buffer_data(path);
+        let pl = s_len(path);
+        let slot: u64 = 0;
+        let st = sa_std_fs_open_write(p, pl, 1, &slot);
+        if st == 0 {
+            let cs = sa_std_close(slot);
+        };
+        return bs_one(v_str(path));
+    }
+
+    fn os_do_execute(&self, args: &Vec<Value>) -> Vec<Value> {
+        if len(args) < 1 || args[0].tag == VT_NIL {
+            return bs_one(v_bool(true));
+        };
+        let cmd = v_to_string(args[0]);
+        let cp: ptr = sa_fmt_buffer_data(cmd);
+        let cl = s_len(cmd);
+        let p0: ptr = sa_fmt_buffer_data(s_from(STR_PTR("sh"), 2));
+        let p1: ptr = sa_fmt_buffer_data(s_from(STR_PTR("-c"), 2));
+        let a0 = OsArg { data: p0, len: 2 };
+        let a1 = OsArg { data: p1, len: 2 };
+        let a2 = OsArg { data: cp, len: cl };
+        let argv = [a0, a1, a2];
+        let code: u32 = 0;
+        let out: u64 = 0;
+        let err: u64 = 0;
+        let st = sa_std_process_exec_capture(&argv, 3, &code, &out, &err);
+        if st != 0 {
+            return os_nil_err(STR_PTR("cannot execute command"), 22);
+        };
+        if code == 0 {
+            return bs_one(v_bool(true));
+        };
+        let outs = Vec::new();
+        outs.push(v_nil());
+        outs.push(v_str(s_from(STR_PTR("exit"), 4)));
+        outs.push(v_int(code as i64));
+        return outs;
+    }
+
+    fn builtin_os(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
+        if id == B_OS_GETENV {
+            return self.os_do_getenv(args);
+        };
+        if id == B_OS_TIME {
+            let t = bs_arg(args, 0);
+            if t.tag == VT_TABLE {
+                return bs_one(self.os_time_table(t));
+            };
+            return bs_one(v_int(sa_time_unix_s()));
+        };
+        if id == B_OS_CLOCK {
+            return bs_one(v_num((sa_time_instant_ns() as f64) / 1000000000.0));
+        };
+        if id == B_OS_DATE {
+            return self.os_do_date(args);
+        };
+        if id == B_OS_DIFFTIME {
+            let a = v_as_num(bs_arg(args, 0));
+            let b = v_as_num(bs_arg(args, 1));
+            return bs_one(v_num(a - b));
+        };
+        if id == B_OS_SETLOCALE {
+            return bs_one(v_str(s_from(STR_PTR("C"), 1)));
+        };
+        if id == B_OS_TMPNAME {
+            return self.os_do_tmpname();
+        };
+        if id == B_OS_REMOVE {
+            let a = bs_arg(args, 0);
+            if a.tag != VT_STR {
+                return os_nil_err(STR_PTR("bad argument #1 to 'remove' (string expected)"), 45);
+            };
+            let p = sa_fmt_buffer_data(a.s);
+            let n = s_len(a.s);
+            if sa_fs_remove_file(p, n) == 0 {
+                return bs_one(v_bool(true));
+            };
+            return os_nil_err(STR_PTR("cannot remove file"), 18);
+        };
+        if id == B_OS_RENAME {
+            let a = bs_arg(args, 0);
+            let b = bs_arg(args, 1);
+            if a.tag != VT_STR || b.tag != VT_STR {
+                return os_nil_err(STR_PTR("bad argument to 'rename'"), 24);
+            };
+            let ap = sa_fmt_buffer_data(a.s);
+            let an = s_len(a.s);
+            let bp = sa_fmt_buffer_data(b.s);
+            let bn = s_len(b.s);
+            if sa_fs_rename(ap, an, bp, bn) == 0 {
+                return bs_one(v_bool(true));
+            };
+            return os_nil_err(STR_PTR("cannot rename file"), 18);
+        };
+        if id == B_OS_EXECUTE {
+            return self.os_do_execute(args);
+        };
+        if id == B_OS_EXIT {
+            let a = bs_arg(args, 0);
+            let code: i32 = 0;
+            if a.tag == VT_INT {
+                code = a.i as i32;
+            } else {
+                if a.tag == VT_NUM {
+                    code = a.f as i32;
+                } else {
+                    if a.tag == VT_BOOL && a.i == 0 {
+                        code = 1;
+                    };
+                };
+            };
+            exit(code);
+            return Vec::new();
+        };
+        return Vec::new();
+    }
+};

@@ -36,7 +36,7 @@ fn s_eq(a: u64, b: u64) -> bool {
         };
     }
     return ok;
-}
+};
 
 fn s_eq_lit(a: u64, lit: ptr, lit_len: u64) -> bool {
     let an = sa_fmt_buffer_len(a);
@@ -57,7 +57,7 @@ fn s_eq_lit(a: u64, lit: ptr, lit_len: u64) -> bool {
         };
     }
     return ok;
-}
+};
 
 fn s_cmp(a: u64, b: u64) -> i64 {
     let an = s_len(a);
@@ -128,7 +128,7 @@ fn s_utf8_esc(cp: i64) -> u64 {
     let first = ((0 - mfb - 1) << 1) | x;
     let b = first & 255;
     return s_cat(s_char(b as u8), out);
-}
+};
 
 fn s_is_digit(c: u8) -> bool {
     if c >= 48 && c <= 57 {

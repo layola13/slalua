@@ -296,3 +296,207 @@ return a.f == b.f;
 ```
 
 Status: open (codegen). Reproducer: `src/probe_let_if.sla`.
+
+## D-011: multiple branch assignment to one local is rejected by the SA backend
+
+Trigger: a local that is written in more than one branch of an `if`/`else`
+chain. The backend emits the SA text with two live definitions of the same
+register (one per branch) and the SA verifier refuses the second definition.
+
+Minimal reproducer:
+
+```sla
+fn f(c: i64) -> i64 {
+    let r = 0;
+    if c == 1 {
+        r = 1;
+    } else {
+        if c == 2 {
+            r = 2;
+        } else {
+            r = 3;
+        };
+    };
+    return r;
+}
+```
+
+Observed:
+
+```
+$ sla check f.sla
+Sla Compiler: Successfully parsed and verified syntax and types of f.sla.
+$ sla build f.sla --out f.sa
+$ sa build-exe f.sa -o f
+error[RegisterRedefinition]: register is already live
+  in function @sla__f(c: i64) -> i64:
+  register: r
+```
+
+Expected: the program compiles and `f` returns 1, 2 or 3. The branch
+definitions never coexist, so a phi-style merge of the register is enough.
+
+Workaround: give each branch its own variable, or use the read-before-write
+idiom `r = r + (newvalue - r);`, which keeps one definition per path.
+
+Status: open (codegen). Not reproduced with the sla 0.1.3 CLI in this
+container, which lowers the same source with one definition per branch; the
+trigger looks version dependent.
+
+## D-012: a `Vec` copied out of a struct field keeps its pointer register live
+
+Trigger: copying a `Vec` field of a struct into a local (`let x = self.items;`)
+inside a loop. The temporary that holds the loaded pointer is never released,
+so the register is still live when the loop head merges the two paths.
+
+Minimal reproducer:
+
+```sla
+@import "sa_std/vec.sa"
+
+struct Holder { items: Vec<i64> }
+
+impl Holder {
+    fn count(&self) -> i64 {
+        let n = 0;
+        while n < 3 {
+            let x = self.items;
+            n = n + len(x);
+        }
+        return n;
+    }
+}
+```
+
+Observed (after `sla build` + `sa build-exe`):
+
+```
+error[PhiStateConflict]: incoming control-flow states do not agree
+  in function @sla__Holder_count(&self: ptr) -> i64:
+  line 48145 (expanded 1140):     jmp L_WHILE_HEAD_0
+  register: tmp_3
+  state: expected Composite, actual Uninitialized
+```
+
+Expected: `count` compiles and returns 0; the copy is released at the end of
+every iteration.
+
+Workaround: do not copy the field - read `self.items` directly at the use site
+(`n = n + len(self.items);`) - and avoid reference-passed `Vec`s; return a
+freshly built `Vec` from helpers instead.
+
+Status: open (escape/liveness analysis).
+
+## D-013: a local shadowed in a nested block is reported as a redeclaration
+
+Trigger: a `let` in an inner block that re-uses the name of a local declared in
+an enclosing block of the same function.
+
+Minimal reproducer:
+
+```sla
+fn f(c: i64) -> i64 {
+    let msg = 1;
+    if c == 1 {
+        let msg = 2;
+        return msg;
+    };
+    return msg;
+}
+```
+
+Observed:
+
+```
+Type Check Error: failed to verify types:
+Redeclaration: symbol `msg` is already defined (error.Redeclaration)
+```
+
+Expected: the inner `let msg` shadows the outer one inside the block, and the
+outer `msg` stays visible after the block ends.
+
+Workaround: use distinct names per scope (`msg1`, `msg2`, ...).
+
+Status: open (type checker). Not reproduced with the sla 0.1.3 CLI in this
+container, which accepts the shadowing; the trigger looks version dependent.
+
+## D-014: a `&Vec<T>` parameter mutated inside a loop triggers a phi-state conflict
+
+Trigger: a reference parameter that is mutated through the reference inside a
+`while` loop. On the path that pushes into the vector the reference register is
+`Active`, on the path that reaches the loop head it is `Composite`, so the
+merge fails. Same diagnostic family as D-012, but the conflict is on the
+reference parameter itself, not on a copied field.
+
+Minimal reproducer:
+
+```sla
+@import "sa_std/vec.sa"
+
+fn fill(buf: &Vec<i64>, n: i64) -> i64 {
+    let i = 0;
+    while i < n {
+        buf.push(i);
+        i = i + 1;
+    }
+    return len(buf);
+}
+```
+
+Observed (after `sla build` + `sa build-exe`):
+
+```
+error[PhiStateConflict]: incoming control-flow states do not agree
+  in function @sla__fill(&buf: ptr, n: i64) -> i64:
+  line 48158 (expanded 1149):     jmp L_WHILE_HEAD_0
+  register: buf
+  state: expected Active, actual Composite
+```
+
+Expected: `fill` appends `n` elements to `buf` and returns its new length.
+
+Workaround: return freshly built `Vec`s from helpers instead of mutating a
+caller-provided `Vec` through a reference.
+
+Status: open (escape/liveness analysis).
+
+## D-015: `while { ... };` with a trailing semicolon is a parse error
+
+Trigger: a `while` block followed by `;`. Sla demands the semicolon after an
+`if` block (see D-008) but rejects it after a `while` block, and the message
+does not name the offending construct - only a byte index into the expanded
+import.
+
+Minimal reproducer:
+
+```sla
+fn f(n: i64) -> i64 {
+    let r = 0;
+    while n > 0 {
+        r = r + 1;
+        n = n - 1;
+    };
+    return r;
+}
+```
+
+Observed:
+
+```
+Unexpected prefix token: semicolon at index 98
+Syntax Error: failed to parse f.sla:6:6: error.UnexpectedToken
+  |
+    4 |         r = r + 1;
+    5 |         n = n - 1;
+    6 |     };
+      |      ^ found ';', expected valid expression or statement token
+```
+
+Expected: the trailing `;` that is mandatory after `if { ... };` should also be
+accepted after `while { ... };`, or the diagnostic should point at the `while`
+statement instead of an index into the expanded import.
+
+Workaround: omit the `;` after a `while` block.
+
+Status: open (parser). The `if`/`while` inconsistency makes the trap easy to
+hit while porting.

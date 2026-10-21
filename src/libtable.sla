@@ -83,7 +83,7 @@ impl Interp {
                 self.fail_str(STR_PTR("bad argument #2 to 'create' (out of range)"), 42);
                 return Vec::new();
             };
-            if narr + nrec > 2147483647 {
+            if nrec > 1073741824 {
                 self.fail_str(STR_PTR("table overflow"), 14);
                 return Vec::new();
             };
@@ -93,6 +93,10 @@ impl Interp {
             return bs_one(v_table(t));
         };
         if id == B_T_INSERT {
+            if len(args) != 2 && len(args) != 3 {
+                self.fail_str(STR_PTR("wrong number of arguments to 'insert'"), 37);
+                return Vec::new();
+            };
             let t = bs_arg(args, 0);
             let n = self.table_len(t.i);
             let pos = n + 1;
@@ -102,6 +106,10 @@ impl Interp {
             } else {
                 pos = self.bi_int(bs_arg(args, 1), n + 1);
                 v = bs_arg(args, 2);
+                if pos < 1 || pos > n + 1 {
+                    self.fail_str(STR_PTR("position out of bounds"), 22);
+                    return Vec::new();
+                };
             };
             let i = n;
             while i >= pos {
@@ -116,6 +124,10 @@ impl Interp {
             let n = self.table_len(t.i);
             let pos = n;
             if len(args) > 1 { pos = self.bi_int(bs_arg(args, 1), n); };
+            if pos != n && (pos < 1 || pos > n + 1) {
+                self.fail_str(STR_PTR("position out of bounds"), 22);
+                return Vec::new();
+            };
             let v = self.table_get(t.i, v_int(pos));
             let i = pos;
             while i < n {
@@ -150,14 +162,30 @@ impl Interp {
             let i1 = n;
             if len(args) > 2 { i0 = self.bi_int(args[2], 1); };
             if len(args) > 3 { i1 = self.bi_int(args[3], n); };
-            let out = bs_str(STR_PTR(""), 0);
+            let parts = Vec::new();
             let i = i0;
             while i <= i1 {
-                if i > i0 { out = s_cat(out, sep); };
-                out = s_cat(out, v_to_string(self.table_get(t.i, v_int(i))));
+                if i > i0 { parts.push(sep); };
+                parts.push(v_to_string(self.table_get(t.i, v_int(i))));
                 i = i + 1;
             }
-            return bs_one(v_str(out));
+            while len(parts) > 1 {
+                let next = Vec::new();
+                let j = 0;
+                while j < (len(parts) as i64) {
+                    if j + 1 < (len(parts) as i64) {
+                        next.push(s_cat(parts[j], parts[j + 1]));
+                    } else {
+                        next.push(parts[j]);
+                    };
+                    j = j + 2;
+                }
+                parts = next;
+            }
+            if len(parts) == 0 {
+                return bs_one(v_str(bs_str(STR_PTR(""), 0)));
+            };
+            return bs_one(v_str(parts[0]));
         };
         if id == B_T_PACK {
             let t = self.new_table();
@@ -339,7 +367,7 @@ impl Interp {
             return bs_one(v_int(0));
         };
         return Vec::new();
-    }
+    };
     fn bi_dbg_info(&self, args: &Vec<Value>) -> Vec<Value> {
         let t = self.new_table();
         self.table_set_str(t, istr(STR_PTR("currentline"), 11), v_int(self.curline));
@@ -628,4 +656,4 @@ impl Interp {
         return r;
     }
 
-}
+};

@@ -4,6 +4,12 @@
 @import "src/parse_core.sla"
 @import "src/parse_expr.sla"
 
+const PK_BLOCK: i64 = 900;
+const PK_LABEL: i64 = 901;
+const PK_GOTO: i64 = 902;
+const PK_LOCAL: i64 = 903;
+const PK_FUNCBOUND: i64 = 904;
+
 fn ps_block_end(k: i64) -> bool {
     if k == TK_EOF || k == KW_END || k == KW_ELSE || k == KW_ELSEIF || k == KW_UNTIL {
         return true;
@@ -23,6 +29,13 @@ impl Parser {
 
     fn parse_block(&self) -> i64 {
         let lid = self.new_list();
+        let isfunc = self.ps_consume_func();
+        let parent = self.ps_cur_block();
+        let pcode = parent;
+        if isfunc != 0 {
+            parent = -1;
+        };
+        let blk = self.ps_push_block(parent);
         let cnames_mark = len(self.cnames);
         let going = true;
         while going && self.err == 0 {
@@ -45,6 +58,10 @@ impl Parser {
         while len(self.cnames) > cnames_mark {
             let dropped = self.cnames.pop();
         }
+        self.ps_pop_block(blk);
+        if pcode < 0 && isfunc == 0 {
+            self.ps_resolve_gotos();
+        };
         return lid;
     }
 
@@ -74,11 +91,22 @@ impl Parser {
         if s_eq_lit(n.s, STR_PTR("close"), 5) {
             return 2;
         };
-        return 1;
+        let msg = s_cat(s_from(STR_PTR("unknown attribute '"), 19), s_cat(n.s, s_from(STR_PTR("'"), 1)));
+        self.fail_msg(n.line, msg);
+        return 0;
     }
 
     fn parse_statement(&self) -> i64 {
         let k = self.kind();
+        if k == LX_ERR_TOK {
+            let t = self.take();
+            let msg = self.lx.errstr;
+            if msg == 0 {
+                msg = s_from(STR_PTR("syntax error"), 12);
+            };
+            self.fail_msg(t.line, msg);
+            return 0;
+        };
         if k == TK_SEMI {
             self.take();
             return 0;
@@ -117,12 +145,26 @@ impl Parser {
         if k == KW_GOTO {
             let t = self.take();
             let n = self.expect(TK_NAME);
+            self.mk(PK_GOTO, t.line, self.ps_cur_count(), self.ps_cur_block(), 0, 0, 0, 0.0, n.s);
             return self.mk(NK_GOTO, t.line, 0, 0, 0, 0, 0, 0.0, n.s);
         };
         if k == TK_COLONCOLON {
             let t = self.take();
             let n = self.expect(TK_NAME);
             self.expect(TK_COLONCOLON);
+            let blk = self.ps_cur_block();
+            let last = self.ps_label_last();
+            let lastn = 0;
+            if last {
+                lastn = 1;
+            };
+            let cnt = self.ps_cur_count();
+            let ecnt = cnt;
+            if last {
+                ecnt = self.node_at(blk).d;
+            };
+            self.ps_check_label(n.s, blk, n.line);
+            self.mk(PK_LABEL, t.line, ecnt, blk, lastn, cnt, 0, 0.0, n.s);
             return self.mk(NK_LABEL, t.line, 0, 0, 0, 0, 0, 0.0, n.s);
         };
         return self.parse_assign_or_call();
@@ -146,7 +188,7 @@ impl Parser {
             let vx = self.node_at(self.lists[vars - self.lbase].items[vi]);
             if vx.kind == NK_NAME {
                 if self.is_cname(vx.s) || self.is_vname(vx.s) {
-                    let msg = s_cat(s_from(STR_PTR("const variable '"), 16), s_cat(vx.s, s_from(STR_PTR("'"), 1)));
+                    let msg = s_cat(s_from(STR_PTR(":"), 1), s_cat(s_i64(vx.line), s_cat(s_from(STR_PTR(": attempt to assign to const variable '"), 39), s_cat(vx.s, s_from(STR_PTR("'"), 1)))));
                     self.fail_msg(vx.line, msg);
                 };
             };
@@ -212,11 +254,13 @@ impl Parser {
         let t = self.take();
         if self.accept(KW_FUNCTION) {
             let n = self.expect(TK_NAME);
+            self.ps_mark_func();
             let f = self.parse_funcbody(0, t.line);
             return self.mk(NK_GLOBAL_FUNC, t.line, f, 0, 0, 0, 0, 0.0, n.s);
         };
         let defattr = self.parse_attrib();
         if self.accept(TK_MUL) {
+            self.ps_add_local(s_char(42), t.line);
             return self.mk(NK_GLOBAL, t.line, 0, 0, 0, 0, defattr + 4, 0.0, 0);
         };
         let names = self.new_list();
@@ -246,7 +290,7 @@ impl Parser {
             }
         };
         return self.mk(NK_GLOBAL, t.line, names, exps, 0, 0, defattr, 0.0, 0);
-    }
+    };
 
     fn parse_for(&self) -> i64 {
         let t = self.take();
@@ -292,6 +336,7 @@ impl Parser {
             target = self.mk(NK_INDEX, t.line, target, 0, 0, 0, 0, 0.0, p.s);
             has_self = 1;
         };
+        self.ps_mark_func();
         let f = self.parse_funcbody(has_self, t.line);
         return self.mk2(NK_FUNC_STMT, t.line, target, f);
     }
@@ -300,6 +345,8 @@ impl Parser {
         let t = self.take();
         if self.accept(KW_FUNCTION) {
             let n = self.expect(TK_NAME);
+            self.ps_add_local(n.s, n.line);
+            self.ps_mark_func();
             let f = self.parse_funcbody(0, t.line);
             return self.mk(NK_LOCAL_FUNC, t.line, f, 0, 0, 0, 0, 0.0, n.s);
         };
@@ -314,6 +361,10 @@ impl Parser {
                 attr = defattr;
             };
             self.list_add(names, self.mk(NK_NAME, n.line, 0, 0, 0, 0, attr, 0.0, n.s));
+            self.ps_add_local(n.s, n.line);
+            if attr == 1 || attr == 2 {
+                self.cnames.push(n.s);
+            };
             if self.accept(TK_COMMA) == false {
                 going = false;
             };
@@ -326,5 +377,209 @@ impl Parser {
             }
         };
         return self.mk(NK_LOCAL, t.line, names, exps, 0, 0, 0, 0.0, 0);
+    }
+
+    fn ps_mark_func(&self) -> void {
+        self.mk(PK_FUNCBOUND, self.cur().line, 0, 0, 0, 0, 0, 0.0, 0);
+    }
+
+    fn ps_consume_func(&self) -> i64 {
+        let i = (len(self.nodes) as i64) - 1;
+        while i >= 0 {
+            let nd = self.nodes[i];
+            if nd.kind == PK_FUNCBOUND && nd.c == 0 {
+                self.nodes[i].c = 1;
+                return 1;
+            };
+            i = i - 1;
+        }
+        return 0;
+    }
+
+    fn ps_tok_at(&self, i: i64) -> i64 {
+        if i < 0 || i >= (len(self.lx.toks) as i64) {
+            return TK_EOF;
+        };
+        return self.lx.toks[i].kind;
+    }
+
+    fn ps_cur_block(&self) -> i64 {
+        let i = (len(self.nodes) as i64) - 1;
+        while i >= 0 {
+            let nd = self.nodes[i];
+            if nd.kind == PK_BLOCK && nd.c == 1 {
+                return self.nbase + i;
+            };
+            i = i - 1;
+        }
+        return -1;
+    }
+
+    fn ps_push_block(&self, parent: i64) -> i64 {
+        let entry = 0;
+        if parent >= 0 {
+            entry = self.node_at(parent).a;
+        };
+        return self.mk(PK_BLOCK, self.cur().line, entry, parent, 1, entry, 0, 0.0, 0);
+    }
+
+    fn ps_pop_block(&self, blk: i64) -> void {
+        let ix = blk - self.nbase;
+        self.nodes[ix].c = 0;
+    }
+
+    fn ps_cur_count(&self) -> i64 {
+        let blk = self.ps_cur_block();
+        if blk < 0 {
+            return 0;
+        };
+        return self.node_at(blk).a;
+    }
+
+    fn ps_add_local(&self, name: u64, line: i64) -> void {
+        let blk = self.ps_cur_block();
+        if blk < 0 {
+            return;
+        };
+        let ix = blk - self.nbase;
+        let cnt = self.nodes[ix].a + 1;
+        self.nodes[ix].a = cnt;
+        self.mk(PK_LOCAL, line, cnt, blk, 0, 0, 0, 0.0, name);
+    }
+
+    fn ps_label_last(&self) -> bool {
+        let i = self.pos;
+        let going = true;
+        while going {
+            let k = self.ps_tok_at(i);
+            if k == TK_SEMI {
+                i = i + 1;
+                continue;
+            };
+            if k == TK_COLONCOLON && self.ps_tok_at(i + 1) == TK_NAME && self.ps_tok_at(i + 2) == TK_COLONCOLON {
+                i = i + 3;
+                continue;
+            };
+            going = false;
+        }
+        let k = self.ps_tok_at(i);
+        if k == TK_EOF || k == KW_END || k == KW_ELSE || k == KW_ELSEIF || k == KW_UNTIL {
+            return true;
+        };
+        return false;
+    }
+
+    fn ps_is_ancestor(&self, anc: i64, blk: i64) -> bool {
+        let cur = blk;
+        while cur >= 0 {
+            if cur == anc {
+                return true;
+            };
+            cur = self.node_at(cur).b;
+        }
+        return false;
+    }
+
+    fn ps_block_depth(&self, blk: i64) -> i64 {
+        let d = 0;
+        let cur = blk;
+        while cur >= 0 {
+            d = d + 1;
+            cur = self.node_at(cur).b;
+        }
+        return d;
+    }
+
+    fn ps_check_label(&self, name: u64, blk: i64, line: i64) -> void {
+        let i = 0;
+        while i < (len(self.nodes) as i64) {
+            let nd = self.nodes[i];
+            if nd.kind == PK_LABEL && s_eq(nd.s, name) && self.ps_is_ancestor(nd.b, blk) {
+                let msg = s_cat(s_from(STR_PTR("label '"), 7), s_cat(name, s_cat(s_from(STR_PTR("' already defined on line "), 26), s_i64(nd.line))));
+                self.fail_msg(line, msg);
+                return;
+            };
+            i = i + 1;
+        }
+    }
+
+    fn ps_find_label(&self, name: u64, gblk: i64) -> i64 {
+        let best = 0;
+        let bestd = -1;
+        let i = 0;
+        while i < (len(self.nodes) as i64) {
+            let nd = self.nodes[i];
+            if nd.kind == PK_LABEL && s_eq(nd.s, name) && self.ps_is_ancestor(nd.b, gblk) {
+                let d = self.ps_block_depth(nd.b);
+                if d > bestd {
+                    bestd = d;
+                    best = self.nbase + i;
+                };
+            };
+            i = i + 1;
+        }
+        return best;
+    }
+
+    fn ps_goto_count(&self, g: Node, lblblk: i64) -> i64 {
+        if g.b == lblblk {
+            return g.a;
+        };
+        let cur = g.b;
+        while cur >= 0 {
+            let par = self.node_at(cur).b;
+            if par == lblblk {
+                return self.node_at(cur).d;
+            };
+            cur = par;
+        }
+        return g.a;
+    }
+
+    fn ps_local_name(&self, blk: i64, cnt: i64) -> u64 {
+        let i = 0;
+        while i < (len(self.nodes) as i64) {
+            let nd = self.nodes[i];
+            if nd.kind == PK_LOCAL && nd.b == blk && nd.a == cnt {
+                return nd.s;
+            };
+            i = i + 1;
+        }
+        let j = 0;
+        while j < (len(self.nodes) as i64) {
+            let nd = self.nodes[j];
+            if nd.kind == PK_LOCAL && nd.a == cnt {
+                return nd.s;
+            };
+            j = j + 1;
+        }
+        return s_char(42);
+    }
+
+    fn ps_resolve_gotos(&self) -> void {
+        if self.err != 0 {
+            return;
+        };
+        let i = 0;
+        while i < (len(self.nodes) as i64) {
+            let g = self.nodes[i];
+            if g.kind == PK_GOTO {
+                let lbl = self.ps_find_label(g.s, g.b);
+                if lbl == 0 {
+                    let msg = s_cat(s_from(STR_PTR("no visible label '"), 18), s_cat(g.s, s_cat(s_from(STR_PTR("' for <goto> at line "), 21), s_i64(g.line))));
+                    self.fail_msg(g.line, msg);
+                    return;
+                };
+                let ln = self.node_at(lbl);
+                let gc = self.ps_goto_count(g, ln.b);
+                if ln.a > gc {
+                    let nm = self.ps_local_name(ln.b, ln.a);
+                    let msg = s_cat(s_from(STR_PTR("<goto "), 6), s_cat(g.s, s_cat(s_from(STR_PTR("> at line "), 10), s_cat(s_i64(g.line), s_cat(s_from(STR_PTR(" jumps into the scope of '"), 26), s_cat(nm, s_from(STR_PTR("'"), 1)))))));
+                    self.fail_msg(g.line, msg);
+                    return;
+                };
+            };
+            i = i + 1;
+        }
     }
 }

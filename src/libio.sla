@@ -1,0 +1,348 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/fmt.sai"
+@import "sa_std/fs.sai"
+@import "sa_std/env.sai"
+@import "sa_std/io.sai"
+@import "sa_std/ptr.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+@import "src/libos.sla"
+@import "src/libio_core.sla"
+
+impl Interp {
+    fn io_close_file(&self, h: i64, hard: bool) -> Vec<Value> {
+        if self.io_is_file(v_table(h)) == false {
+            if hard {
+                self.fail_str(STR_PTR("bad argument #1 to 'close' (FILE* expected)"), 43);
+                return Vec::new();
+            };
+            return io_nil_err(STR_PTR("bad argument #1 to 'close' (FILE* expected)"), 43);
+        };
+        let kind = self.io_fget(h, s_from(STR_PTR("__kind"), 6)).i;
+        if kind != 0 {
+            return io_nil_err(STR_PTR("cannot close standard file"), 26);
+        };
+        let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            if hard {
+                self.fail_str(STR_PTR("attempt to use a closed file"), 28);
+                return Vec::new();
+            };
+            return io_nil_err(STR_PTR("attempt to use a closed file"), 28);
+        };
+        let f = self.io_file_flush(h);
+        if f[0].tag == VT_NIL {
+            return f;
+        };
+        self.io_fset(h, s_from(STR_PTR("__closed"), 8), v_bool(true));
+        return bs_one(v_bool(true));
+    }
+
+    fn io_do_type(&self, args: &Vec<Value>) -> Vec<Value> {
+        let a = bs_arg(args, 0);
+        if self.io_is_file(a) == false {
+            return bs_one(v_nil());
+        };
+        let c = self.io_fget(a.i, s_from(STR_PTR("__closed"), 8));
+        if c.tag == VT_BOOL && c.i != 0 {
+            return bs_one(v_str(s_from(STR_PTR("closed file"), 11)));
+        };
+        return bs_one(v_str(s_from(STR_PTR("file"), 4)));
+    }
+
+    fn io_do_input(&self, args: &Vec<Value>, out: bool) -> Vec<Value> {
+        if len(args) < 1 || args[0].tag == VT_NIL {
+            let h = self.io_current(out);
+            if h >= 0 {
+                return bs_one(v_table(h));
+            };
+            return bs_one(v_nil());
+        };
+        let a = args[0];
+        if self.io_is_file(a) {
+            self.io_set_current(out, a.i);
+            return bs_one(a);
+        };
+        if a.tag == VT_STR {
+            let mode = s_from(STR_PTR("r"), 1);
+            if out {
+                mode = s_from(STR_PTR("w"), 1);
+            };
+            let f = self.io_open_path(a.s, mode);
+            if f.tag == VT_NIL {
+                self.fail_str(STR_PTR("cannot open file"), 16);
+                return Vec::new();
+            };
+            self.io_set_current(out, f.i);
+            return bs_one(f);
+        };
+        self.fail_str(STR_PTR("bad argument to 'input'"), 23);
+        return Vec::new();
+    }
+
+    fn builtin_io(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
+        if id == B_IO_WRITE {
+            let h = self.io_current(true);
+            if h < 0 {
+                self.fail_str(STR_PTR("output file is closed"), 21);
+                return Vec::new();
+            };
+            let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+            if c.tag == VT_BOOL && c.i != 0 {
+                self.fail_str(STR_PTR("output file is closed"), 21);
+                return Vec::new();
+            };
+            let r = self.io_file_write(h, args, 0);
+            if r[0].tag == VT_TABLE {
+                return bs_one(v_table(h));
+            };
+            return r;
+        };
+        if id == B_IO_FWRITE {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'write' (FILE* expected)"), 43);
+                return Vec::new();
+            };
+            return self.io_file_write(a.i, args, 1);
+        };
+        if id == B_IO_READ {
+            let h = self.io_current(false);
+            if h < 0 {
+                self.fail_str(STR_PTR("input file is closed"), 20);
+                return Vec::new();
+            };
+            let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+            if c.tag == VT_BOOL && c.i != 0 {
+                self.fail_str(STR_PTR("input file is closed"), 20);
+                return Vec::new();
+            };
+            return self.io_read_many(h, args, 0);
+        };
+        if id == B_IO_FREAD {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'read' (FILE* expected)"), 42);
+                return Vec::new();
+            };
+            return self.io_read_many(a.i, args, 1);
+        };
+        if id == B_IO_OPEN {
+            let a = bs_arg(args, 0);
+            if a.tag != VT_STR {
+                self.fail_str(STR_PTR("bad argument #1 to 'open' (string expected)"), 43);
+                return Vec::new();
+            };
+            let mode = s_from(STR_PTR("r"), 1);
+            let b = bs_arg(args, 1);
+            if b.tag == VT_STR {
+                mode = b.s;
+            };
+            let pm = self.io_parse_mode(mode);
+            if pm == 0 {
+                self.fail_str(STR_PTR("invalid mode"), 12);
+                return Vec::new();
+            };
+            let f = self.io_open_path(a.s, mode);
+            if f.tag == VT_NIL {
+                return io_nil_err(STR_PTR("cannot open file"), 16);
+            };
+            return bs_one(f);
+        };
+        if id == B_IO_CLOSE {
+            let a = bs_arg(args, 0);
+            let h = self.io_current(true);
+            if self.io_is_file(a) {
+                h = a.i;
+            } else {
+                if a.tag != VT_NIL {
+                    self.fail_str(STR_PTR("bad argument #1 to 'close' (FILE* expected)"), 43);
+                    return Vec::new();
+                };
+            };
+            if h < 0 {
+                return io_nil_err(STR_PTR("no output file"), 14);
+            };
+            return self.io_close_file(h, true);
+        };
+        if id == B_IO_FCLOSE {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'close' (FILE* expected)"), 43);
+                return Vec::new();
+            };
+            return self.io_close_file(a.i, false);
+        };
+        if id == B_IO_INPUT {
+            return self.io_do_input(args, false);
+        };
+        if id == B_IO_OUTPUT {
+            return self.io_do_input(args, true);
+        };
+        if id == B_IO_TYPE {
+            return self.io_do_type(args);
+        };
+        if id == B_IO_FLUSH {
+            let h = self.io_current(true);
+            if h < 0 {
+                self.fail_str(STR_PTR("output file is closed"), 21);
+                return Vec::new();
+            };
+            return self.io_file_flush(h);
+        };
+        if id == B_IO_FFLUSH {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'flush' (FILE* expected)"), 43);
+                return Vec::new();
+            };
+            return self.io_file_flush(a.i);
+        };
+        if id == B_IO_FSEEK {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'seek' (FILE* expected)"), 42);
+                return Vec::new();
+            };
+            let h = a.i;
+            let c = self.io_fget(h, s_from(STR_PTR("__closed"), 8));
+            if c.tag == VT_BOOL && c.i != 0 {
+                self.fail_str(STR_PTR("attempt to use a closed file"), 28);
+                return Vec::new();
+            };
+            let kind = self.io_fget(h, s_from(STR_PTR("__kind"), 6)).i;
+            if kind != 0 {
+                return io_nil_err(STR_PTR("cannot seek standard file"), 25);
+            };
+            let w = bs_arg(args, 1);
+            let off = bs_arg(args, 2);
+            let data = self.io_fget(h, s_from(STR_PTR("__data"), 6)).s;
+            let n = s_len(data) as i64;
+            let pos = self.io_fget(h, s_from(STR_PTR("__pos"), 5)).i;
+            let base = pos;
+            if w.tag == VT_STR {
+                if s_eq_lit(w.s, STR_PTR("set"), 3) {
+                    base = 0;
+                } else {
+                    if s_eq_lit(w.s, STR_PTR("end"), 3) {
+                        base = n;
+                    } else {
+                        if s_eq_lit(w.s, STR_PTR("cur"), 3) {
+                            base = pos;
+                        } else {
+                            self.fail_str(STR_PTR("invalid option"), 14);
+                            return Vec::new();
+                        };
+                    };
+                };
+            };
+            if v_is_number(off) {
+                base = base + (v_as_num(off) as i64);
+            };
+            if base < 0 {
+                return io_nil_err(STR_PTR("invalid offset"), 14);
+            };
+            self.io_fset(h, s_from(STR_PTR("__pos"), 5), v_int(base));
+            return bs_one(v_int(base));
+        };
+        if id == B_IO_LINES {
+            let a = bs_arg(args, 0);
+            let h = self.io_current(false);
+            let start = 0;
+            let auto = false;
+            if a.tag == VT_STR {
+                let f = self.io_open_path(a.s, s_from(STR_PTR("r"), 1));
+                if f.tag == VT_NIL {
+                    self.fail_str(STR_PTR("cannot open file"), 16);
+                    return Vec::new();
+                };
+                h = f.i;
+                start = 1;
+                auto = true;
+            } else {
+                if a.tag == VT_NIL && len(args) > 1 {
+                    start = 1;
+                };
+            };
+            if h < 0 {
+                self.fail_str(STR_PTR("no input file"), 13);
+                return Vec::new();
+            };
+            return bs_one(self.io_make_iter(h, args, start, auto));
+        };
+        if id == B_IO_FLINES {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'lines' (FILE* expected)"), 43);
+                return Vec::new();
+            };
+            return bs_one(self.io_make_iter(a.i, args, 1, false));
+        };
+        if id == B_IO_ITER {
+            let a = bs_arg(args, 0);
+            if a.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad iterator"), 12);
+                return Vec::new();
+            };
+            let it = a.i;
+            let done = self.io_fget(it, s_from(STR_PTR("__it_done"), 9));
+            if done.tag == VT_BOOL && done.i != 0 {
+                self.fail_str(STR_PTR("file is already closed"), 22);
+                return Vec::new();
+            };
+            let h = self.io_fget(it, s_from(STR_PTR("__it_file"), 9)).i;
+            let fmts = self.io_iter_formats(it);
+            let out = self.io_read_many(h, &fmts, 0);
+            if self.ctrl == CTL_ERROR {
+                return Vec::new();
+            };
+            if len(out) == 0 || out[0].tag == VT_NIL {
+                self.io_fset(it, s_from(STR_PTR("__it_done"), 9), v_bool(true));
+                let auto = self.io_fget(it, s_from(STR_PTR("__it_auto"), 9));
+                if auto.tag == VT_BOOL && auto.i != 0 {
+                    let r = self.io_close_file(h, false);
+                };
+                return Vec::new();
+            };
+            return out;
+        };
+        if id == B_IO_TMPFILE {
+            let tv = self.builtin_os(B_OS_TMPNAME, args);
+            if len(tv) == 0 || tv[0].tag != VT_STR {
+                self.fail_str(STR_PTR("cannot create temporary file"), 28);
+                return Vec::new();
+            };
+            let f = self.io_open_path(tv[0].s, s_from(STR_PTR("w+"), 2));
+            if f.tag == VT_NIL {
+                return io_nil_err(STR_PTR("cannot open temporary file"), 26);
+            };
+            return bs_one(f);
+        };
+        if id == B_IO_FSETVBUF {
+            let a = bs_arg(args, 0);
+            if self.io_is_file(a) == false {
+                self.fail_str(STR_PTR("bad argument #1 to 'setvbuf' (FILE* expected)"), 45);
+                return Vec::new();
+            };
+            let m = bs_arg(args, 1);
+            if m.tag == VT_STR {
+                if s_eq_lit(m.s, STR_PTR("no"), 2) || s_eq_lit(m.s, STR_PTR("full"), 4) || s_eq_lit(m.s, STR_PTR("line"), 4) {
+                    self.io_fset(a.i, s_from(STR_PTR("__buf"), 5), v_str(m.s));
+                } else {
+                    self.fail_str(STR_PTR("invalid option"), 14);
+                    return Vec::new();
+                };
+            };
+            return bs_one(v_bool(true));
+        };
+        if id == B_IO_POPEN {
+            self.fail_str(STR_PTR("io.popen is not implemented"), 27);
+            return Vec::new();
+        };
+        return Vec::new();
+    }
+};

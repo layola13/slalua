@@ -26,6 +26,10 @@ impl Interp {
                     j = j + 1;
                 }
                 if found < 0 {
+                    if self.envs[env].parent < 0 {
+                        let msg = s_cat(s_from(STR_PTR("no visible label '"), 18), s_cat(target, s_from(STR_PTR("' for <goto>"), 12)));
+                        self.fail_text(msg);
+                    };
                     return;
                 };
                 self.ctrl = CTL_NONE;
@@ -184,7 +188,7 @@ impl Interp {
             self.table_set(self.globals, v_str(nd.s), f);
             return;
         };
-    }
+    };
 
     fn exec_local(&self, env: i64, nd: Node) -> void {
         let vals = self.eval_list(env, nd.b);

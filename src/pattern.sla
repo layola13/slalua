@@ -409,7 +409,7 @@ fn pat_match_balance(st: &PatState, s: i64, p: i64) -> i64 {
         i = i + 1;
     }
     return -1;
-}
+};
 
 fn pat_start_capture(st: &PatState, s: i64, p: i64, what: i64) -> i64 {
     let level = st.level;
@@ -430,7 +430,7 @@ fn pat_start_capture(st: &PatState, s: i64, p: i64, what: i64) -> i64 {
         st.level = level;
     };
     return res;
-}
+};
 
 fn pat_end_capture(st: &PatState, s: i64, p: i64) -> i64 {
     let l = pat_capture_to_close(st);
@@ -594,4 +594,4 @@ fn pat_match(st: &PatState, s: i64, p: i64) -> i64 {
     }
     st.depth = st.depth + 1;
     return cur_s;
-}
+};

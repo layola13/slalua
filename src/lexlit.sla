@@ -1,0 +1,87 @@
+@import "src/tok.sla"
+@import "src/strutil.sla"
+
+fn lx_is_digit(c: u8) -> bool {
+    return c >= 48 && c <= 57;
+}
+
+fn lx_is_hex(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    if c >= 97 && c <= 102 {
+        return true;
+    };
+    if c >= 65 && c <= 70 {
+        return true;
+    };
+    return false;
+}
+
+fn lx_hex_val(c: u8) -> i64 {
+    if c >= 48 && c <= 57 {
+        return (c - 48) as i64;
+    };
+    if c >= 97 && c <= 102 {
+        return ((c - 97) + 10) as i64;
+    };
+    return ((c - 65) + 10) as i64;
+}
+
+fn lx_hex_digit(c: u8) -> i64 {
+    if c >= 48 && c <= 57 {
+        return (c - 48) as i64;
+    };
+    if c >= 97 && c <= 102 {
+        return ((c - 97) + 10) as i64;
+    };
+    if c >= 65 && c <= 70 {
+        return ((c - 65) + 10) as i64;
+    };
+    return -1;
+}
+
+fn lx_is_alpha(c: u8) -> bool {
+    if c >= 97 && c <= 122 {
+        return true;
+    };
+    if c >= 65 && c <= 90 {
+        return true;
+    };
+    return c == 95;
+}
+
+fn lx_is_alnum(c: u8) -> bool {
+    return lx_is_alpha(c) || lx_is_digit(c);
+}
+
+fn lx_is_space(c: u8) -> bool {
+    return c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12;
+}
+
+fn lx_keyword(s: u64) -> i64 {
+    if s_eq_lit(s, STR_PTR("and"), 3) { return KW_AND; };
+    if s_eq_lit(s, STR_PTR("break"), 5) { return KW_BREAK; };
+    if s_eq_lit(s, STR_PTR("do"), 2) { return KW_DO; };
+    if s_eq_lit(s, STR_PTR("else"), 4) { return KW_ELSE; };
+    if s_eq_lit(s, STR_PTR("elseif"), 6) { return KW_ELSEIF; };
+    if s_eq_lit(s, STR_PTR("end"), 3) { return KW_END; };
+    if s_eq_lit(s, STR_PTR("false"), 5) { return KW_FALSE; };
+    if s_eq_lit(s, STR_PTR("for"), 3) { return KW_FOR; };
+    if s_eq_lit(s, STR_PTR("function"), 8) { return KW_FUNCTION; };
+    if s_eq_lit(s, STR_PTR("global"), 6) { return KW_GLOBAL; };
+    if s_eq_lit(s, STR_PTR("goto"), 4) { return KW_GOTO; };
+    if s_eq_lit(s, STR_PTR("if"), 2) { return KW_IF; };
+    if s_eq_lit(s, STR_PTR("in"), 2) { return KW_IN; };
+    if s_eq_lit(s, STR_PTR("local"), 5) { return KW_LOCAL; };
+    if s_eq_lit(s, STR_PTR("nil"), 3) { return KW_NIL; };
+    if s_eq_lit(s, STR_PTR("not"), 3) { return KW_NOT; };
+    if s_eq_lit(s, STR_PTR("or"), 2) { return KW_OR; };
+    if s_eq_lit(s, STR_PTR("repeat"), 6) { return KW_REPEAT; };
+    if s_eq_lit(s, STR_PTR("return"), 6) { return KW_RETURN; };
+    if s_eq_lit(s, STR_PTR("then"), 4) { return KW_THEN; };
+    if s_eq_lit(s, STR_PTR("true"), 4) { return KW_TRUE; };
+    if s_eq_lit(s, STR_PTR("until"), 5) { return KW_UNTIL; };
+    if s_eq_lit(s, STR_PTR("while"), 5) { return KW_WHILE; };
+    return TK_NAME;
+}
