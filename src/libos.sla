@@ -426,7 +426,16 @@ impl Interp {
     }
 
     fn os_do_execute(&self, args: &Vec<Value>) -> Vec<Value> {
-        if len(args) < 1 || args[0].tag == VT_NIL {
+        let has_cmd = len(args) > 0;
+        let cmd_nil = true;
+        if has_cmd {
+            if args[0].tag == VT_NIL {
+                cmd_nil = true;
+            } else {
+                cmd_nil = false;
+            };
+        };
+        if has_cmd == false || cmd_nil {
             return bs_one(v_bool(true));
         };
         let cmd = v_to_string(args[0]);

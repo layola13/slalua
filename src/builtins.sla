@@ -103,7 +103,7 @@ impl Interp {
         let preload = self.new_table();
         self.table_set_str(pkg, bs_str(STR_PTR("loaded"), 6), v_table(loaded));
         self.table_set_str(pkg, bs_str(STR_PTR("preload"), 7), v_table(preload));
-        self.table_set_str(pkg, bs_str(STR_PTR("path"), 4), v_str(bs_str(STR_PTR("../lua/testes/?.lua"), 19)));
+        self.table_set_str(pkg, bs_str(STR_PTR("path"), 4), v_str(bs_str(STR_PTR("./?.lua;./?/init.lua"), 20)));
         self.table_set_str(pkg, bs_str(STR_PTR("cpath"), 5), v_str(bs_str(STR_PTR(""), 0)));
         self.table_set_str(pkg, bs_str(STR_PTR("config"), 6), v_str(bs_str(STR_PTR("/\n;\n?\n!\n-\n"), 10)));
         self.table_set_str(self.globals, bs_str(STR_PTR("package"), 7), v_table(pkg));

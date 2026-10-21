@@ -464,7 +464,8 @@ impl Interp {
 
     fn table_border_del(&self, tid: i64, key: &Value) -> void {
         let k = self.table_key_index(key);
-        if k < 1 || k > self.tables[tid].border {
+        let over = k > self.tables[tid].border;
+        if k < 1 || over {
             return;
         };
         let nb = k - 1;

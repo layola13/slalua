@@ -55,7 +55,16 @@ impl Interp {
     }
 
     fn io_do_input(&self, args: &Vec<Value>, out: bool) -> Vec<Value> {
-        if len(args) < 1 || args[0].tag == VT_NIL {
+        let has_arg = len(args) > 0;
+        let arg_is_nil = true;
+        if has_arg {
+            if args[0].tag == VT_NIL {
+                arg_is_nil = true;
+            } else {
+                arg_is_nil = false;
+            };
+        };
+        if has_arg == false || arg_is_nil {
             let h = self.io_current(out);
             if h >= 0 {
                 return bs_one(v_table(h));
@@ -300,7 +309,14 @@ impl Interp {
             if self.ctrl == CTL_ERROR {
                 return Vec::new();
             };
-            if len(out) == 0 || out[0].tag == VT_NIL {
+            let out_empty = len(out) == 0;
+            let out_nil = false;
+            if out_empty == false {
+                if out[0].tag == VT_NIL {
+                    out_nil = true;
+                };
+            };
+            if out_empty || out_nil {
                 self.io_fset(it, s_from(STR_PTR("__it_done"), 9), v_bool(true));
                 let auto = self.io_fget(it, s_from(STR_PTR("__it_auto"), 9));
                 if auto.tag == VT_BOOL && auto.i != 0 {
@@ -312,7 +328,14 @@ impl Interp {
         };
         if id == B_IO_TMPFILE {
             let tv = self.builtin_os(B_OS_TMPNAME, args);
-            if len(tv) == 0 || tv[0].tag != VT_STR {
+            let tv_empty = len(tv) == 0;
+            let tv_bad = false;
+            if tv_empty == false {
+                if tv[0].tag != VT_STR {
+                    tv_bad = true;
+                };
+            };
+            if tv_empty || tv_bad {
                 self.fail_str(STR_PTR("cannot create temporary file"), 28);
                 return Vec::new();
             };
