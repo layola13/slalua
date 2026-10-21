@@ -165,19 +165,59 @@ impl Lexer {
         self.fail(line);
     }
 
+    fn skip_newline(&self) -> void {
+        if self.pos >= self.len {
+            return;
+        };
+        let c = self.peek(0);
+        if c == 13 {
+            self.pos = self.pos + 1;
+            self.line = self.line + 1;
+            if self.pos < self.len {
+                if self.peek(0) == 10 {
+                    self.pos = self.pos + 1;
+                };
+            };
+            return;
+        };
+        if c == 10 {
+            self.pos = self.pos + 1;
+            self.line = self.line + 1;
+            if self.pos < self.len {
+                if self.peek(0) == 13 {
+                    self.pos = self.pos + 1;
+                };
+            };
+            return;
+        };
+    }
+
     fn read_long(&self, level: i64, line: i64) -> u64 {
         let out = s_from(STR_PTR(""), 0);
-        let first = true;
+        self.skip_newline();
         while self.pos < self.len {
             if self.long_close(level) {
                 return out;
             };
             let c = self.take();
-            if first {
-                first = false;
-                if c == 10 || c == 13 {
-                    continue;
+            if c == 10 {
+                out = s_cat(out, s_char(10));
+                if self.pos < self.len {
+                    if self.peek(0) == 13 {
+                        self.pos = self.pos + 1;
+                    };
                 };
+                continue;
+            };
+            if c == 13 {
+                out = s_cat(out, s_char(10));
+                self.line = self.line + 1;
+                if self.pos < self.len {
+                    if self.peek(0) == 10 {
+                        self.pos = self.pos + 1;
+                    };
+                };
+                continue;
             };
             out = s_cat(out, s_char(c));
         }
