@@ -33,7 +33,11 @@ src/value.sla      Value tagged union + conversions
 src/interp_core.sla arenas (Env/Table/Func), globals, control codes
 src/interp_expr.sla expression evaluator, calls, closures, indexing
 src/interp_stmt.sla statements, loops, blocks, goto
-src/builtins.sla   base / string / table / math / os builtins
+src/opcodes.sla    builtin ids shared by the libraries
+src/libutil.sla    argument/string helpers, integer coercion
+src/libstring.sla  string library
+src/libtable.sla   table / math / os library, `require`, debug stubs
+src/builtins.sla   base builtins + library registration
 src/interp.sla     evaluator entry point
 docs/sla-defects.md  defects found while porting
 ```
@@ -60,10 +64,12 @@ sa build-exe .sla-cache/parseall.sa -o /tmp/parseall
 
 The evaluator runs blocks, locals/globals, assignment, numeric and generic
 loops, `repeat`, closures, method calls, varargs (including Lua 5.5 named
-varargs), table constructors, `goto`, `pcall`/`error`, and a core set of base,
-`string`, `table`, `math` and `os` functions. It executes
-`tests/hello.lua` and `tests/features.lua` and advances through
-`testes/vararg.lua` up to the Lua 5.5 named-vararg `n` validation checks.
+varargs and `_ENV`), table constructors, `goto`, `pcall`/`xpcall`/`error`,
+`load`, `require` (including `package.preload`), and a core set of base,
+`string`, `table`, `math` and `os` functions. It passes `tests/hello.lua`,
+`tests/features.lua`, and the upstream `testes/vararg.lua` and
+`testes/bitwise.lua` suites. `testes/closure.lua` is blocked on weak-table GC;
+`testes/big.lua` needs broader library coverage.
 
 Run the evaluator smoke test with:
 
@@ -75,8 +81,8 @@ sa build-exe .sla-cache/run.sa -o /tmp/run
 
 Each stage is compiled with `sla check`, `sla build` and executed before moving
 on. Defects found so far are tracked in `docs/sla-defects.md`. Coroutines,
-metamethod coverage (`__newindex`, `__call`, arithmetic), `require`, and the
-debug library are next.
+full metamethod coverage (`__newindex`, `__call`, `__index` functions), the
+debug library, and GC are next.
 
 ## Build
 

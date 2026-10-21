@@ -12,6 +12,11 @@ struct Parser {
     errline: i64,
     errkind: i64,
     root: i64,
+    nbase: i64,
+    lbase: i64,
+    vnames: Vec<u64>,
+    cnames: Vec<u64>,
+    errstr: u64,
 }
 
 fn parser_new(lx: Lexer) -> Parser {
@@ -24,6 +29,11 @@ fn parser_new(lx: Lexer) -> Parser {
         errline: 0,
         errkind: 0,
         root: 0,
+        nbase: 0,
+        lbase: 0,
+        vnames: Vec::new(),
+        cnames: Vec::new(),
+        errstr: 0,
     };
 }
 
@@ -75,6 +85,44 @@ impl Parser {
         };
     }
 
+    fn fail_msg(&self, line: i64, msg: u64) -> void {
+        if self.err == 0 {
+            self.err = 1;
+            self.errline = line;
+            self.errstr = msg;
+        };
+    }
+
+    fn node_at(&self, id: i64) -> Node {
+        let ix = id - self.nbase;
+        if ix >= 0 && ix < (len(self.nodes) as i64) {
+            return self.nodes[ix];
+        };
+        return node_new(0, 0, 0, 0, 0, 0, 0, 0.0, 0);
+    }
+
+    fn is_cname(&self, s: u64) -> bool {
+        let i = 0;
+        while i < (len(self.cnames) as i64) {
+            if s_eq(self.cnames[i], s) {
+                return true;
+            };
+            i = i + 1;
+        }
+        return false;
+    }
+
+    fn is_vname(&self, s: u64) -> bool {
+        let i = 0;
+        while i < (len(self.vnames) as i64) {
+            if s_eq(self.vnames[i], s) {
+                return true;
+            };
+            i = i + 1;
+        }
+        return false;
+    }
+
     fn expect(&self, k: i64) -> Token {
         if self.at(k) {
             return self.take();
@@ -84,7 +132,7 @@ impl Parser {
     }
 
     fn mk(&self, kind: i64, line: i64, a: i64, b: i64, c: i64, d: i64, n: i64, f: f64, s: u64) -> i64 {
-        let id = len(self.nodes) as i64;
+        let id = self.nbase + (len(self.nodes) as i64);
         self.nodes.push(node_new(kind, line, a, b, c, d, n, f, s));
         return id;
     }
@@ -126,16 +174,16 @@ impl Parser {
     }
 
     fn new_list(&self) -> i64 {
-        let id = len(self.lists) as i64;
+        let id = self.lbase + (len(self.lists) as i64);
         self.lists.push(list_new());
         return id;
     }
 
     fn list_add(&self, lid: i64, id: i64) -> void {
-        self.lists[lid].items.push(id);
+        self.lists[lid - self.lbase].items.push(id);
     }
 
     fn list_len(&self, lid: i64) -> i64 {
-        return len(self.lists[lid].items) as i64;
+        return len(self.lists[lid - self.lbase].items) as i64;
     }
 }

@@ -200,3 +200,27 @@ debugging time while porting the evaluator:
 Reproducers: the interpreter sources (`src/interp_expr.sla`).
 
 Status: documented behaviour.
+
+## D-009 Logical `&&` does not short-circuit
+
+`&&` evaluates its right-hand side even when the left side is false. Bounds-
+checked indexing on the right therefore turns a guard into a runtime panic:
+
+```sla
+if len(v) > 0 && v[0] > 0 { ... }
+```
+
+With an empty `v`, this reaches `v[0]` and aborts with `PANIC code=32`
+(out-of-bounds). Reproducer: `src/probe_and.sla`.
+
+Workaround: nest the tests instead of relying on short-circuit evaluation:
+
+```sla
+if len(v) > 0 {
+    if v[0] > 0 { ... }
+}
+```
+
+Status: open. The same pattern must be audited anywhere a guard protects an
+index, division, or affine call; fixed occurrences in `B_GETMETA` and
+`bi_require` were rewritten as nested `if`s.

@@ -137,6 +137,17 @@ impl Parser {
         }
         self.expect(TK_ASSIGN);
         let exps = self.parse_exprlist();
+        let vi = 0;
+        while vi < self.list_len(vars) {
+            let vx = self.node_at(self.lists[vars - self.lbase].items[vi]);
+            if vx.kind == NK_NAME {
+                if self.is_cname(vx.s) || self.is_vname(vx.s) {
+                    let msg = s_cat(s_from(STR_PTR("const variable '"), 16), s_cat(vx.s, s_from(STR_PTR("'"), 1)));
+                    self.fail_msg(vx.line, msg);
+                };
+            };
+            vi = vi + 1;
+        }
         return self.mk(NK_ASSIGN, line, vars, exps, 0, 0, 0, 0.0, 0);
     }
 
@@ -214,6 +225,9 @@ impl Parser {
                 k = defattr;
             };
             self.list_add(names, self.mk(NK_NAME, n.line, 0, 0, 0, 0, k, 0.0, n.s));
+            if k == 1 {
+                self.cnames.push(n.s);
+            };
             if self.accept(TK_COMMA) == false {
                 going = false;
             };

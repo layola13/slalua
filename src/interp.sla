@@ -1,4 +1,7 @@
 @import "sa_std/vec.sa"
+@import "sa_std/fs.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/fs.sa"
 @import "src/tok.sla"
 @import "src/ast.sla"
 @import "src/value.sla"

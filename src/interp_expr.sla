@@ -83,6 +83,10 @@ impl Interp {
             if vn != 0 {
                 let t = self.env_get(env, vn);
                 if t.tag == VT_TABLE {
+                    let nv = self.vararg_n(t.i);
+                    if nv < 1 {
+                        return v_nil();
+                    };
                     return self.table_get(t.i, v_int(1));
                 };
                 return v_nil();
@@ -145,6 +149,19 @@ impl Interp {
         return self.call_value(f, all);
     }
 
+    fn vararg_n(&self, t: i64) -> i64 {
+        let cnt = self.table_get_str(t, s_from(STR_PTR("n"), 1));
+        if cnt.tag != VT_INT {
+            self.fail_str(STR_PTR("no proper 'n'"), 13);
+            return 0;
+        };
+        if cnt.i < 0 || cnt.i > 1048576 {
+            self.fail_str(STR_PTR("no proper 'n'"), 13);
+            return 0;
+        };
+        return cnt.i;
+    }
+
     fn eval_multi(&self, env: i64, id: i64) -> Vec<Value> {
         let out = Vec::new();
         let nd = self.nd(id);
@@ -158,11 +175,7 @@ impl Interp {
                 if t.tag != VT_TABLE {
                     return out;
                 };
-                let cnt = self.table_get_str(t.i, s_from(STR_PTR("n"), 1));
-                let nv = 0;
-                if cnt.tag == VT_INT {
-                    nv = cnt.i;
-                };
+                let nv = self.vararg_n(t.i);
                 let i = 1;
                 while i <= nv {
                     out.push(self.table_get(t.i, v_int(i)));
@@ -289,7 +302,14 @@ impl Interp {
         if obj.tag == VT_STR {
             let st = self.table_get_str(self.globals, s_from(STR_PTR("string"), 6));
             if st.tag == VT_TABLE {
-                return self.table_get(st.i, key);
+                let sv = self.table_get(st.i, key);
+                if sv.tag != VT_NIL {
+                    return sv;
+                };
+            };
+            let sm = self.table_get_str(self.globals, s_from(STR_PTR("__strmeta"), 9));
+            if sm.tag == VT_TABLE {
+                return self.table_get(sm.i, key);
             };
         };
         return v_nil();
@@ -311,6 +331,10 @@ impl Interp {
 
     fn num_bin(&self, op: i64, a: Value, b: Value) -> Value {
         if v_is_number(a) == false || v_is_number(b) == false {
+            let mm = self.bin_mm_name(op);
+            if mm != 0 {
+                return self.mm_bin(mm, a, b);
+            };
             self.fail_str(STR_PTR("attempt to perform arithmetic on a non-number value"), 51);
             return v_nil();
         };
@@ -393,12 +417,102 @@ impl Interp {
         if op == TK_TILDE {
             return v_int(v_to_i64(a) ^ v_to_i64(b));
         };
-        if op == TK_SHL {
-            return v_int(v_to_i64(a) << v_to_i64(b));
+        if op == TK_SHL || op == TK_SHR {
+            let x = v_to_i64(a);
+            let n = v_to_i64(b);
+            let left = op == TK_SHL;
+            if n < 0 {
+                if n <= -64 {
+                    return v_int(0);
+                };
+                left = left == false;
+                n = 0 - n;
+            };
+            if n >= 64 {
+                return v_int(0);
+            };
+            if left {
+                return v_int(((x as u64) << (n as u64)) as i64);
+            };
+            return v_int(((x as u64) >> (n as u64)) as i64);
         };
-        if op == TK_SHR {
-            return v_int(v_to_i64(a) >> v_to_i64(b));
+        return v_nil();
+    }
+
+    fn metatable_of(&self, v: Value) -> i64 {
+        if v.tag == VT_TABLE {
+            return self.tables[v.i].meta;
         };
+        if v.tag == VT_STR {
+            let sm = self.table_get_str(self.globals, s_from(STR_PTR("__strmeta"), 9));
+            if sm.tag == VT_TABLE {
+                return sm.i;
+            };
+        };
+        return -1;
+    }
+
+    fn bin_mm_name(&self, op: i64) -> u64 {
+        if op == TK_ADD { return s_from(STR_PTR("__add"), 5); };
+        if op == TK_SUB { return s_from(STR_PTR("__sub"), 5); };
+        if op == TK_MUL { return s_from(STR_PTR("__mul"), 5); };
+        if op == TK_DIV { return s_from(STR_PTR("__div"), 5); };
+        if op == TK_IDIV { return s_from(STR_PTR("__idiv"), 6); };
+        if op == TK_MOD { return s_from(STR_PTR("__mod"), 5); };
+        if op == TK_POW { return s_from(STR_PTR("__pow"), 5); };
+        if op == TK_AMP { return s_from(STR_PTR("__band"), 6); };
+        if op == TK_PIPE { return s_from(STR_PTR("__bor"), 5); };
+        if op == TK_TILDE { return s_from(STR_PTR("__bxor"), 6); };
+        if op == TK_SHL { return s_from(STR_PTR("__shl"), 5); };
+        if op == TK_SHR { return s_from(STR_PTR("__shr"), 5); };
+        return 0;
+    }
+
+    fn mm_bin(&self, name: u64, a: Value, b: Value) -> Value {
+        let ma = self.metatable_of(a);
+        if ma >= 0 {
+            let f = self.table_get(ma, v_str(name));
+            if f.tag == VT_FUNC || f.tag == VT_BUILTIN {
+                let args = Vec::new();
+                args.push(a);
+                args.push(b);
+                let out = self.call_value(f, args);
+                if len(out) > 0 {
+                    return out[0];
+                };
+            };
+        };
+        let mb = self.metatable_of(b);
+        if mb >= 0 {
+            let f = self.table_get(mb, v_str(name));
+            if f.tag == VT_FUNC || f.tag == VT_BUILTIN {
+                let args = Vec::new();
+                args.push(a);
+                args.push(b);
+                let out = self.call_value(f, args);
+                if len(out) > 0 {
+                    return out[0];
+                };
+            };
+        };
+        self.fail_str(STR_PTR("attempt to perform arithmetic on a non-number value"), 51);
+        return v_nil();
+    }
+
+    fn mm_un(&self, name: u64, a: Value) -> Value {
+        let ma = self.metatable_of(a);
+        if ma >= 0 {
+            let f = self.table_get(ma, v_str(name));
+            if f.tag == VT_FUNC || f.tag == VT_BUILTIN {
+                let args = Vec::new();
+                args.push(a);
+                let out = self.call_value(f, args);
+                if len(out) > 0 {
+                    return out[0];
+                };
+            };
+        };
+        self.fail_str(STR_PTR("attempt to perform arithmetic on a non-number value"), 51);
         return v_nil();
     }
 
@@ -472,8 +586,7 @@ impl Interp {
             if v.tag == VT_NUM {
                 return v_num(0.0 - v.f);
             };
-            self.fail_str(STR_PTR("attempt to negate a non-number value"), 38);
-            return v_nil();
+            return self.mm_un(s_from(STR_PTR("__unm"), 5), v);
         };
         if nd.n == TK_HASH {
             if v.tag == VT_STR {
@@ -486,7 +599,10 @@ impl Interp {
             return v_nil();
         };
         if nd.n == TK_TILDE {
-            return v_int(v_to_i64(v) ^ (-1));
+            if v_is_number(v) {
+                return v_int(v_to_i64(v) ^ (-1));
+            };
+            return self.mm_un(s_from(STR_PTR("__bnot"), 6), v);
         };
         return v_nil();
     }

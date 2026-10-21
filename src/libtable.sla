@@ -1,0 +1,277 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/math.sai"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_expr.sla"
+@import "sa_std/fs.sai"
+@import "sa_std/fs.sa"
+@import "sa_std/fmt.sai"
+@import "src/lexer.sla"
+@import "src/parser.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+fn istr(s: ptr, n: u64) -> u64 {
+    return s_from(s, n);
+}
+
+impl Interp {
+    fn builtin_aux(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
+        if id == B_M_FMOD {
+            let a = v_as_num(bs_arg(args, 0));
+            let b = v_as_num(bs_arg(args, 1));
+            let q = sa_math_floor(a / b);
+            return bs_one(v_num(a - q * b));
+        };
+        if id == B_REQUIRE {
+            return self.bi_require(args);
+        };
+        if id == B_DBG_INFO {
+            return self.bi_dbg_info(args);
+        };
+        if id == B_DBG_TRACE {
+            let m = bs_arg(args, 0);
+            if m.tag == VT_NIL {
+                return bs_one(v_str(bs_str(STR_PTR(""), 0)));
+            };
+            return bs_one(v_str(v_to_string(m)));
+        };
+        if id == B_T_INSERT {
+            let t = bs_arg(args, 0);
+            let n = self.table_len(t.i);
+            let pos = n + 1;
+            let v = v_nil();
+            if len(args) == 2 {
+                v = args[1];
+            } else {
+                pos = self.bi_int(bs_arg(args, 1), n + 1);
+                v = bs_arg(args, 2);
+            };
+            let i = n;
+            while i >= pos {
+                self.table_set(t.i, v_int(i + 1), self.table_get(t.i, v_int(i)));
+                i = i - 1;
+            }
+            self.table_set(t.i, v_int(pos), v);
+            return Vec::new();
+        };
+        if id == B_T_REMOVE {
+            let t = bs_arg(args, 0);
+            let n = self.table_len(t.i);
+            let pos = n;
+            if len(args) > 1 { pos = self.bi_int(bs_arg(args, 1), n); };
+            let v = self.table_get(t.i, v_int(pos));
+            let i = pos;
+            while i < n {
+                self.table_set(t.i, v_int(i), self.table_get(t.i, v_int(i + 1)));
+                i = i + 1;
+            }
+            self.table_set(t.i, v_int(n), v_nil());
+            return bs_one(v);
+        };
+        if id == B_T_CONCAT {
+            let t = bs_arg(args, 0);
+            let sep = bs_str(STR_PTR(""), 0);
+            if len(args) > 1 { sep = v_to_string(args[1]); };
+            let n = self.table_len(t.i);
+            let i0 = 1;
+            let i1 = n;
+            if len(args) > 2 { i0 = self.bi_int(args[2], 1); };
+            if len(args) > 3 { i1 = self.bi_int(args[3], n); };
+            let out = bs_str(STR_PTR(""), 0);
+            let i = i0;
+            while i <= i1 {
+                if i > i0 { out = s_cat(out, sep); };
+                out = s_cat(out, v_to_string(self.table_get(t.i, v_int(i))));
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_T_PACK {
+            let t = self.new_table();
+            let i = 0;
+            while i < (len(args) as i64) {
+                self.table_set(t, v_int(i + 1), args[i]);
+                i = i + 1;
+            }
+            self.table_set_str(t, bs_str(STR_PTR("n"), 1), v_int(len(args) as i64));
+            return bs_one(v_table(t));
+        };
+        if id == B_T_UNPACK {
+            let t = bs_arg(args, 0);
+            let i0 = 1;
+            let i1 = self.table_len(t.i);
+            if len(args) > 1 { i0 = self.bi_int(args[1], 1); };
+            if len(args) > 2 { i1 = self.bi_int(args[2], i1); };
+            let r = Vec::new();
+            let i = i0;
+            while i <= i1 {
+                r.push(self.table_get(t.i, v_int(i)));
+                i = i + 1;
+            }
+            return r;
+        };
+        if id == B_M_FLOOR {
+            return bs_one(v_int(sa_math_floor(v_as_num(bs_arg(args, 0))) as i64));
+        };
+        if id == B_M_CEIL {
+            return bs_one(v_int(sa_math_ceil(v_as_num(bs_arg(args, 0))) as i64));
+        };
+        if id == B_M_ABS {
+            let v = bs_arg(args, 0);
+            if v.tag == VT_INT {
+                if v.i < 0 {
+                    return bs_one(v_int(0 - v.i));
+                };
+                return bs_one(v);
+            };
+            let f = v_as_num(v);
+            if f < 0.0 { f = 0.0 - f; };
+            return bs_one(v_num(f));
+        };
+        if id == B_M_MAX || id == B_M_MIN {
+            let best = bs_arg(args, 0);
+            let i = 1;
+            while i < (len(args) as i64) {
+                let v = args[i];
+                let better = v_as_num(v) > v_as_num(best);
+                if id == B_M_MIN { better = v_as_num(v) < v_as_num(best); };
+                if better { best = v; };
+                i = i + 1;
+            }
+            return bs_one(best);
+        };
+        if id == B_M_SQRT {
+            return bs_one(v_num(sa_math_sqrt(v_as_num(bs_arg(args, 0)))));
+        };
+        if id == B_M_TYPE {
+            let v = bs_arg(args, 0);
+            if v.tag == VT_INT { return bs_one(v_str(bs_str(STR_PTR("integer"), 7))); };
+            if v.tag == VT_NUM { return bs_one(v_str(bs_str(STR_PTR("float"), 5))); };
+            return bs_one(v_nil());
+        };
+        if id == B_M_TOINT {
+            let v = bs_arg(args, 0);
+            if v.tag == VT_INT { return bs_one(v); };
+            if v.tag == VT_NUM && v_is_integral(v) {
+                return bs_one(v_int(v.f as i64));
+            };
+            return bs_one(v_nil());
+        };
+        if id == B_OS_CLOCK {
+            return bs_one(v_num(0.0));
+        };
+        if id == B_OS_TIME {
+            return bs_one(v_int(0));
+        };
+        return Vec::new();
+    }
+    fn bi_dbg_info(&self, args: &Vec<Value>) -> Vec<Value> {
+        let t = self.new_table();
+        self.table_set_str(t, istr(STR_PTR("currentline"), 11), v_int(self.curline));
+        self.table_set_str(t, istr(STR_PTR("source"), 6), v_str(istr(STR_PTR("=?"), 2)));
+        self.table_set_str(t, istr(STR_PTR("short_src"), 9), v_str(istr(STR_PTR("=?"), 2)));
+        self.table_set_str(t, istr(STR_PTR("what"), 4), v_str(istr(STR_PTR("Lua"), 3)));
+        self.table_set_str(t, istr(STR_PTR("linedefined"), 11), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("lastlinedefined"), 15), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("nups"), 4), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("nparams"), 7), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("isvararg"), 8), v_bool(true));
+        let r = Vec::new();
+        r.push(v_table(t));
+        return r;
+    }
+
+    fn bi_require(&self, args: &Vec<Value>) -> Vec<Value> {
+        let name = bs_arg(args, 0);
+        if name.tag != VT_STR {
+            return self.one_str(STR_PTR("bad argument to 'require'"), 25);
+        };
+        let pkg = self.table_get_str(self.globals, istr(STR_PTR("package"), 7));
+        let loaded = self.table_get_str(pkg.i, istr(STR_PTR("loaded"), 6));
+        let cached = self.table_get(loaded.i, v_str(name.s));
+        if cached.tag != VT_NIL {
+            let r = Vec::new();
+            r.push(cached);
+            return r;
+        };
+        let pre = self.table_get_str(pkg.i, istr(STR_PTR("preload"), 7));
+        if pre.tag == VT_TABLE {
+            let pf = self.table_get(pre.i, v_str(name.s));
+            if pf.tag != VT_NIL {
+                let cargs = Vec::new();
+                cargs.push(v_str(name.s));
+                let pout = self.call_value(pf, cargs);
+                let pres = v_bool(true);
+                if len(pout) > 0 {
+                    if pout[0].tag != VT_NIL {
+                        pres = pout[0];
+                    };
+                };
+                self.table_set(loaded.i, v_str(name.s), pres);
+                let pr = Vec::new();
+                pr.push(pres);
+                return pr;
+            };
+        };
+        let gv = self.table_get(self.globals, name);
+        if gv.tag == VT_TABLE {
+            self.table_set(loaded.i, v_str(name.s), gv);
+            let r = Vec::new();
+            r.push(gv);
+            return r;
+        };
+        let base = s_cat(istr(STR_PTR("../lua/testes/"), 14), s_cat(name.s, istr(STR_PTR(".lua"), 4)));
+        let pl = s_len(base);
+        let p: ptr = sa_fmt_buffer_data(base);
+        let buf = sa_fs_read_file(p, pl, 8388608);
+        if buf == 0 {
+            return self.one_str(STR_PTR("module not found"), 16);
+        };
+        let dp: ptr = sa_fs_read_buffer_data(buf);
+        let dl = sa_fs_read_buffer_len(buf);
+        let text = s_from(dp, dl);
+        let st = sa_fs_read_buffer_free(buf);
+        let lx = lex_source(text);
+        let pr = parse_tokens_base(lx, len(self.nodes) as i64, len(self.lists) as i64);
+        if pr.err != 0 {
+            return self.one_str(STR_PTR("syntax error in module"), 22);
+        };
+        let i = 0;
+        while i < (len(pr.nodes) as i64) {
+            let nd = pr.nodes[i];
+            self.nodes.push(nd);
+            i = i + 1;
+        }
+        let j = 0;
+        while j < (len(pr.lists) as i64) {
+            let ls = pr.lists[j];
+            self.lists.push(ls);
+            j = j + 1;
+        }
+        let fid = self.new_func(Vec::new(), pr.root, 1, 0, -1);
+        let cargs = Vec::new();
+        cargs.push(v_str(name.s));
+        let out = self.call_value(v_func(fid), cargs);
+        let res = v_bool(true);
+        if len(out) > 0 {
+            if out[0].tag != VT_NIL {
+                res = out[0];
+            };
+        };
+        self.table_set(loaded.i, v_str(name.s), res);
+        let r = Vec::new();
+        r.push(res);
+        return r;
+    }
+
+    fn one_str(&self, msg: ptr, n: u64) -> Vec<Value> {
+        let r = Vec::new();
+        r.push(v_nil());
+        r.push(v_str(istr(msg, n)));
+        return r;
+    }
+
+}

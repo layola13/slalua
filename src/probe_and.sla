@@ -1,0 +1,9 @@
+@import "sa_std/vec.sa"
+@import "sa_std/io/print.sai"
+fn main() -> i32 {
+    let v = Vec::new();
+    if len(v) > 0 && v[0] == 1 {
+        println("yes");
+    };
+    return 0;
+}

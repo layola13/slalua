@@ -1,0 +1,192 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_expr.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+impl Interp {
+    fn builtin_string(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
+        if id == B_S_LEN {
+            return bs_one(v_int(s_len(v_to_string(bs_arg(args, 0))) as i64));
+        };
+        if id == B_S_SUB {
+            let s = v_to_string(bs_arg(args, 0));
+            let n = s_len(s) as i64;
+            let i0 = bs_pos(self.bi_int(bs_arg(args, 1), 1), n);
+            let i1 = n;
+            if len(args) > 2 {
+                i1 = bs_pos(self.bi_int(bs_arg(args, 2), n), n);
+            };
+            if i0 < 1 { i0 = 1; };
+            if i1 > n { i1 = n; };
+            if i0 > i1 { return bs_one(v_str(bs_str(STR_PTR(""), 0))); };
+            return bs_one(v_str(s_slice(s, (i0 - 1) as u64, (i1 - i0 + 1) as u64)));
+        };
+        if id == B_S_UPPER {
+            return bs_one(v_str(self.bi_case(v_to_string(bs_arg(args, 0)), 0)));
+        };
+        if id == B_S_LOWER {
+            return bs_one(v_str(self.bi_case(v_to_string(bs_arg(args, 0)), 1)));
+        };
+        if id == B_S_BYTE {
+            let s = v_to_string(bs_arg(args, 0));
+            let n = s_len(s) as i64;
+            let i0 = 1;
+            if len(args) > 1 { i0 = bs_pos(self.bi_int(bs_arg(args, 1), 1), n); };
+            let i1 = i0;
+            if len(args) > 2 { i1 = bs_pos(self.bi_int(bs_arg(args, 2), i0), n); };
+            let r = Vec::new();
+            let i = i0;
+            while i <= i1 && i <= n {
+                if i >= 1 {
+                    r.push(v_int(s_byte(s, (i - 1) as u64) as i64));
+                };
+                i = i + 1;
+            }
+            return r;
+        };
+        if id == B_S_CHAR {
+            let out = bs_str(STR_PTR(""), 0);
+            let i = 0;
+            while i < (len(args) as i64) {
+                out = s_cat(out, s_char(self.bi_int(args[i], 0) as u8));
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_REP {
+            let s = v_to_string(bs_arg(args, 0));
+            let n = self.bi_int(bs_arg(args, 1), 0);
+            let sep = bs_str(STR_PTR(""), 0);
+            if len(args) > 2 { sep = v_to_string(bs_arg(args, 2)); };
+            let out = bs_str(STR_PTR(""), 0);
+            let i: i64 = 0;
+            while i < n {
+                if i > 0 { out = s_cat(out, sep); };
+                out = s_cat(out, s);
+                i = i + 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_REVERSE {
+            let s = v_to_string(bs_arg(args, 0));
+            let n = s_len(s);
+            let out = bs_str(STR_PTR(""), 0);
+            let i = n;
+            while i > 0 {
+                out = s_cat(out, s_char(s_byte(s, i - 1)));
+                i = i - 1;
+            }
+            return bs_one(v_str(out));
+        };
+        if id == B_S_PACKSIZE {
+            return bs_one(v_int(8));
+        };
+        if id == B_S_FIND {
+            let str = v_to_string(bs_arg(args, 0));
+            let pat = v_to_string(bs_arg(args, 1));
+            let n = s_len(str) as i64;
+            let m = s_len(pat) as i64;
+            let init = 1;
+            if len(args) > 2 {
+                init = self.bi_int(bs_arg(args, 2), 1);
+            };
+            if init < 0 {
+                init = n + init + 1;
+            };
+            if init < 1 {
+                init = 1;
+            };
+            if m == 0 {
+                let r = Vec::new();
+                r.push(v_int(init));
+                r.push(v_int(init - 1));
+                return r;
+            };
+            let i = init - 1;
+            while i + m <= n {
+                let piece = s_slice(str, i as u64, m as u64);
+                if s_eq(piece, pat) {
+                    let r = Vec::new();
+                    r.push(v_int(i + 1));
+                    r.push(v_int(i + m));
+                    return r;
+                };
+                i = i + 1;
+            }
+            return bs_one(v_nil());
+        };
+        if id == B_S_FORMAT {
+            return bs_one(v_str(self.bi_format(args)));
+        };
+        return Vec::new();
+    }
+
+    fn bi_case(&self, s: u64, lower: i64) -> u64 {
+        let n = s_len(s);
+        let out = bs_str(STR_PTR(""), 0);
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(s, i);
+            let d = c;
+            if lower == 1 {
+                if c >= 65 && c <= 90 { d = c + 32; };
+            } else {
+                if c >= 97 && c <= 122 { d = c - 32; };
+            };
+            out = s_cat(out, s_char(d));
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn bi_format(&self, args: &Vec<Value>) -> u64 {
+        let f = v_to_string(bs_arg(args, 0));
+        let n = s_len(f);
+        let out = bs_str(STR_PTR(""), 0);
+        let ai = 1;
+        let i: u64 = 0;
+        while i < n {
+            let c = s_byte(f, i);
+            if c != 37 {
+                out = s_cat(out, s_char(c));
+                i = i + 1;
+                continue;
+            };
+            i = i + 1;
+            if i >= n {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let k = s_byte(f, i);
+            i = i + 1;
+            if k == 37 {
+                out = s_cat(out, s_char(37));
+                continue;
+            };
+            let v = bs_arg(args, ai);
+            ai = ai + 1;
+            if k == 115 {
+                out = s_cat(out, v_to_string(v));
+            } else {
+                if k == 100 || k == 105 {
+                    out = s_cat(out, s_i64(self.bi_int(v, 0)));
+                } else {
+                    if k == 102 || k == 103 {
+                        out = s_cat(out, s_f64(v_as_num(v)));
+                    } else {
+                        if k == 99 {
+                            out = s_cat(out, s_char(self.bi_int(v, 0) as u8));
+                        } else {
+                            out = s_cat(out, v_to_string(v));
+                        }
+                    }
+                }
+            }
+        }
+        return out;
+    }
+}

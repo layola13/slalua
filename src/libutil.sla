@@ -1,0 +1,57 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+
+fn bs_one(v: Value) -> Vec<Value> {
+    let out = Vec::new();
+    out.push(v);
+    return out;
+}
+
+fn bs_rest(args: &Vec<Value>, from: i64) -> Vec<Value> {
+    let out = Vec::new();
+    let i = from;
+    while i < (len(args) as i64) {
+        out.push(args[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn bs_copy(args: &Vec<Value>) -> Vec<Value> {
+    return bs_rest(args, 0);
+}
+
+fn bs_str(p: ptr, n: u64) -> u64 {
+    return s_from(p, n);
+}
+
+fn bs_arg(args: &Vec<Value>, i: i64) -> Value {
+    if i < (len(args) as i64) {
+        return args[i];
+    };
+    return v_nil();
+}
+
+fn bs_pos(p: i64, n: i64) -> i64 {
+    if p < 0 {
+        return n + p + 1;
+    };
+    return p;
+}
+
+
+impl Interp {
+    fn bi_int(&self, v: Value, d: i64) -> i64 {
+        if v.tag == VT_INT {
+            return v.i;
+        };
+        if v.tag == VT_NUM {
+            return v.f as i64;
+        };
+        return d;
+    }
+
+}

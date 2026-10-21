@@ -19,3 +19,11 @@ fn parse_tokens(lx: Lexer) -> Parser {
     p.parse_program();
     return p;
 }
+
+fn parse_tokens_base(lx: Lexer, nbase: i64, lbase: i64) -> Parser {
+    let p = parser_new(lx);
+    p.nbase = nbase;
+    p.lbase = lbase;
+    p.parse_program();
+    return p;
+}

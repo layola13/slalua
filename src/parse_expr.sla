@@ -267,11 +267,13 @@ impl Parser {
         self.expect(TK_LPAREN);
         let params = self.new_list();
         let vararg = 0;
+        let vname = 0;
         if self.at(TK_RPAREN) == false {
             if self.accept(TK_ELLIPSIS) {
                 vararg = 1;
                 if self.at(TK_NAME) {
                     let vn = self.take();
+                    vname = vn.s;
                     self.list_add(params, self.mk(NK_NAME, vn.line, 0, 0, 0, 0, 4, 0.0, vn.s));
                 };
             } else {
@@ -287,6 +289,7 @@ impl Parser {
                         vararg = 1;
                         if self.at(TK_NAME) {
                             let vn = self.take();
+                            vname = vn.s;
                             self.list_add(params, self.mk(NK_NAME, vn.line, 0, 0, 0, 0, 4, 0.0, vn.s));
                         };
                         more = false;
@@ -298,8 +301,14 @@ impl Parser {
             };
         };
         self.expect(TK_RPAREN);
+        if vname != 0 {
+            self.vnames.push(vname);
+        };
         let body = self.parse_block();
         self.expect(KW_END);
+        if vname != 0 {
+            self.vnames.pop();
+        };
         return self.mk(NK_FUNC, line, params, body, 0, has_self, vararg, 0.0, 0);
     }
 }
