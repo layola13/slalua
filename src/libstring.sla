@@ -229,7 +229,7 @@ impl Interp {
             return bs_one(v_nil());
         };
         if st.err != 0 {
-            self.fail_str(STR_PTR("malformed pattern"), 17);
+            self.fail_text(pat_err_msg(&st));
             return Vec::new();
         };
         if find {
@@ -279,7 +279,14 @@ impl Interp {
                     buf.push(v_str(s_slice(st.src, s as u64, (e - s) as u64)));
                 } else {
                     if d >= 49 && d <= 57 {
-                        let cap = pat_one_capture(st, (d as i64) - 49, s, e);
+                        let idx = (d as i64) - 49;
+                        if idx >= st.level {
+                            let e1 = s_from(STR_PTR("invalid capture index %"), 23);
+                            let e2 = s_cat(e1, s_char(d));
+                            self.fail_text(e2);
+                            return buf;
+                        };
+                        let cap = pat_one_capture(st, idx, s, e);
                         if cap.tag == VT_INT {
                             buf.push(v_str(s_i64(cap.i)));
                         } else {
@@ -310,7 +317,10 @@ impl Interp {
             buf.push(v_str(s_f64(v.f)));
             return buf;
         };
-        self.fail_str(STR_PTR("invalid replacement value"), 25);
+        let e1 = s_from(STR_PTR("invalid replacement value (a "), 29);
+        let e2 = s_cat(e1, v_type_name(v));
+        let e3 = s_cat(e2, s_from(STR_PTR(")"), 1));
+        self.fail_text(e3);
         return buf;
     }
 
@@ -441,6 +451,10 @@ impl Interp {
             st.level = 0;
             st.depth = PAT_MAXCCALLS;
             let e = pat_match(&st, src, pat_start);
+            if st.err != 0 {
+                self.fail_text(pat_err_msg(&st));
+                return Vec::new();
+            };
             if e >= 0 && e != lastmatch {
                 n = n + 1;
                 if src > copied {

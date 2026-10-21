@@ -18,6 +18,7 @@ struct PatState {
     mstart: i64,
     mend: i64,
     err: i64,
+    errnum: i64,
     cap_init: Vec<i64>,
     cap_len: Vec<i64>,
 }
@@ -33,6 +34,7 @@ fn pat_state_new(src: u64, pat: u64) -> PatState {
         mstart: -1,
         mend: -1,
         err: 0,
+        errnum: 0,
         cap_init: Vec::new(),
         cap_len: Vec::new(),
     };
@@ -307,6 +309,7 @@ fn pat_capture_to_close(st: &PatState) -> i64 {
 fn pat_match_capture(st: &PatState, s: i64, l: i64) -> i64 {
     if l < 0 || l >= st.level {
         st.err = 1;
+        st.errnum = l + 1;
         return -1;
     };
     let len = st.cap_len[l];

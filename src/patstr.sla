@@ -50,10 +50,20 @@ fn pat_plain_find(st: &PatState, init: i64) -> i64 {
     return -1;
 }
 
+fn pat_err_msg(st: &PatState) -> u64 {
+    if st.errnum >= 0 {
+        let m = s_from(STR_PTR("invalid capture index %"), 23);
+        let d = 48 + st.errnum;
+        return s_cat(m, s_char(d as u8));
+    };
+    return s_from(STR_PTR("malformed pattern"), 17);
+}
+
 fn pat_one_capture(st: &PatState, i: i64, s: i64, e: i64) -> Value {
     if i >= st.level {
         if i != 0 {
             st.err = 1;
+            st.errnum = i + 1;
             return v_nil();
         };
         if e < s {
