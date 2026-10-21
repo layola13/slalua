@@ -710,66 +710,106 @@ impl Interp {
         if f.tag == VT_BUILTIN {
             return self.builtin_call(f.i, args);
         };
+        if f.tag == VT_TABLE {
+            let meta = self.tables[f.i].meta;
+            if meta >= 0 {
+                let call = self.table_get_str(meta, s_from(STR_PTR("__call"), 6));
+                if call.tag == VT_FUNC || call.tag == VT_BUILTIN {
+                    let cargs = Vec::new();
+                    cargs.push(f);
+                    let i = 0;
+                    while i < (len(args) as i64) {
+                        cargs.push(args[i]);
+                        i = i + 1;
+                    }
+                    return self.call_value(call, cargs);
+                };
+            };
+        };
         self.fail_str(STR_PTR("attempt to call a non-function value"), 36);
         return Vec::new();
     }
 
     fn call_lua(&self, fid: i64, args: Vec<Value>) -> Vec<Value> {
-        let env = self.new_env(self.funcs[fid].env);
-        let nparams = len(self.funcs[fid].params) as i64;
-        let ai = 0;
-        if self.funcs[fid].has_self != 0 {
-            let sv = v_nil();
-            if len(args) > 0 {
-                sv = args[0];
-            };
-            self.env_define(env, s_from(STR_PTR("self"), 4), sv, 0);
-            ai = 1;
-        };
-        let i = 0;
-        while i < nparams {
-            let pid = self.funcs[fid].params[i];
-            let pn = self.nd(pid);
-            if pn.n == 4 {
-                let t = self.new_table();
-                let j = ai;
-                let idx = 1;
-                let mem_before = self.mem_used;
-                while j < (len(args) as i64) {
-                    self.table_set(t, v_int(idx), args[j]);
-                    idx = idx + 1;
-                    j = j + 1;
-                }
-                self.mem_used = mem_before;
-                self.table_set_str(t, s_from(STR_PTR("n"), 1), v_int(idx - 1));
-                self.mem_used = mem_before;
-                self.envs[env].vargname = pn.s;
-                self.env_define(env, pn.s, v_table(t), 0);
+        self.depth = self.depth + 1;
+        if self.depth > 195 {
+            self.depth = self.depth - 1;
+            if self.in_error != 0 {
+                self.fail_text(s_from(STR_PTR("error in error handling"), 23));
             } else {
-                let av = v_nil();
-                if ai < (len(args) as i64) {
-                    av = args[ai];
-                    ai = ai + 1;
-                };
-                self.env_define(env, pn.s, av, 0);
+                self.fail_text(s_from(STR_PTR("stack overflow"), 14));
             };
-            i = i + 1;
-        }
-        let va = Vec::new();
-        while ai < (len(args) as i64) {
-            va.push(args[ai]);
-            ai = ai + 1;
-        }
-        self.envs[env].varargs = va;
-        self.ctrl = CTL_NONE;
-        self.retvals = Vec::new();
-        let saved_line = self.curline;
-        self.exec_block(env, self.funcs[fid].body);
-        self.curline = saved_line;
-        let out = self.take_returns();
-        if self.ctrl == CTL_RETURN {
-            self.ctrl = CTL_NONE;
+            return Vec::new();
         };
+        self.tail_args = args;
+        let cur_fid = fid;
+        let out = Vec::new();
+        let going = true;
+        while going {
+            let env = self.new_env(self.funcs[cur_fid].env);
+            let nparams = len(self.funcs[cur_fid].params) as i64;
+            let ai = 0;
+            if self.funcs[cur_fid].has_self != 0 {
+                let sv = v_nil();
+                if len(self.tail_args) > 0 {
+                    sv = self.tail_args[0];
+                };
+                self.env_define(env, s_from(STR_PTR("self"), 4), sv, 0);
+                ai = 1;
+            };
+            let i = 0;
+            while i < nparams {
+                let pid = self.funcs[cur_fid].params[i];
+                let pn = self.nd(pid);
+                if pn.n == 4 {
+                    let t = self.new_table();
+                    let j = ai;
+                    let idx = 1;
+                    let mem_before = self.mem_used;
+                    while j < (len(self.tail_args) as i64) {
+                        self.table_set(t, v_int(idx), self.tail_args[j]);
+                        idx = idx + 1;
+                        j = j + 1;
+                    }
+                    self.mem_used = mem_before;
+                    self.table_set_str(t, s_from(STR_PTR("n"), 1), v_int(idx - 1));
+                    self.mem_used = mem_before;
+                    self.envs[env].vargname = pn.s;
+                    self.env_define(env, pn.s, v_table(t), 0);
+                } else {
+                    let av = v_nil();
+                    if ai < (len(self.tail_args) as i64) {
+                        av = self.tail_args[ai];
+                        ai = ai + 1;
+                    };
+                    self.env_define(env, pn.s, av, 0);
+                };
+                i = i + 1;
+            }
+            let va = Vec::new();
+            while ai < (len(self.tail_args) as i64) {
+                va.push(self.tail_args[ai]);
+                ai = ai + 1;
+            }
+            self.envs[env].varargs = va;
+            self.ctrl = CTL_NONE;
+            self.retvals = Vec::new();
+            let saved_line = self.curline;
+            self.exec_block(env, self.funcs[cur_fid].body);
+            self.curline = saved_line;
+            if self.tail_flag == 1 {
+                self.tail_flag = 0;
+                cur_fid = cur_fid + (self.tail_fid - cur_fid);
+                continue;
+            };
+            let res = self.take_returns();
+            if self.ctrl == CTL_RETURN {
+                self.ctrl = CTL_NONE;
+            };
+            self.depth = self.depth - 1;
+            return res;
+        }
+        self.depth = self.depth - 1;
         return out;
     }
 }

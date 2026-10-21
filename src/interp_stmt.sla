@@ -103,6 +103,55 @@ impl Interp {
             return;
         };
         if nd.kind == NK_RETURN {
+            if self.list_len(nd.a) == 1 {
+                let eid = self.list_get(nd.a, 0);
+                let en = self.nd(eid);
+                if en.kind == NK_METHOD {
+                    let obj = self.eval(env, en.a);
+                    let margs = self.eval_list(env, en.b);
+                    let callee = self.get_index(obj, v_str(en.s));
+                    if callee.tag == VT_FUNC {
+                        let cargs = Vec::new();
+                        cargs.push(obj);
+                        let ai = 0;
+                        while ai < (len(margs) as i64) {
+                            cargs.push(margs[ai]);
+                            ai = ai + 1;
+                        }
+                        self.tail_flag = 1;
+                        self.tail_fid = callee.i;
+                        self.tail_args = cargs;
+                        self.ctrl = CTL_RETURN;
+                        return;
+                    };
+                    let cargs2 = Vec::new();
+                    cargs2.push(obj);
+                    let aj = 0;
+                    while aj < (len(margs) as i64) {
+                        cargs2.push(margs[aj]);
+                        aj = aj + 1;
+                    }
+                    let out = self.call_value(callee, cargs2);
+                    self.retvals = out;
+                    self.ctrl = CTL_RETURN;
+                    return;
+                };
+                if en.kind == NK_CALL {
+                    let callee = self.eval(env, en.a);
+                    let cargs = self.eval_list(env, en.b);
+                    if callee.tag == VT_FUNC {
+                        self.tail_flag = 1;
+                        self.tail_fid = callee.i;
+                        self.tail_args = cargs;
+                        self.ctrl = CTL_RETURN;
+                        return;
+                    };
+                    let out = self.call_value(callee, cargs);
+                    self.retvals = out;
+                    self.ctrl = CTL_RETURN;
+                    return;
+                };
+            };
             let vals = self.eval_list(env, nd.a);
             self.retvals = vals;
             self.ctrl = CTL_RETURN;

@@ -4,6 +4,10 @@
 @import "src/strutil.sla"
 @import "src/interp_core.sla"
 
+fn vec_pick(old: Vec<Value>, newv: Vec<Value>) -> Vec<Value> {
+    return newv;
+}
+
 fn bs_one(v: Value) -> Vec<Value> {
     let out = Vec::new();
     out.push(v);

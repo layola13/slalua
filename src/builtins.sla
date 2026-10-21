@@ -239,13 +239,22 @@ impl Interp {
                 self.ctrl = CTL_NONE;
                 let hr = Vec::new();
                 hr.push(v_str(msg));
+                self.in_error = self.in_error + 1;
                 let ho = self.call_value(h, hr);
+                self.in_error = self.in_error - 1;
                 let r = Vec::new();
                 r.push(v_bool(false));
-                if len(ho) > 0 {
-                    r.push(ho[0]);
+                if self.err != 0 {
+                    let hm = self.err;
+                    self.err = 0;
+                    self.ctrl = CTL_NONE;
+                    r.push(v_str(hm));
                 } else {
-                    r.push(v_str(msg));
+                    if len(ho) > 0 {
+                        r.push(ho[0]);
+                    } else {
+                        r.push(v_str(msg));
+                    };
                 };
                 return r;
             };

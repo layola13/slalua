@@ -60,6 +60,11 @@ struct Interp {
     rng0: u64,
     rng1: u64,
     mem_used: i64,
+    tail_flag: i64,
+    tail_fid: i64,
+    tail_args: Vec<Value>,
+    depth: i64,
+    in_error: i64,
 }
 
 fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
@@ -104,6 +109,11 @@ fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
         rng0: 88172645463325252,
         rng1: 6364136223846793005,
         mem_used: 0,
+        tail_flag: 0,
+        tail_fid: 0,
+        tail_args: Vec::new(),
+        depth: 0,
+        in_error: 0,
     };
     it.globals = it.new_table();
     return it;
