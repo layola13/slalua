@@ -1,0 +1,26 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/ptr.sa"
+
+fn main() -> i32 {
+    let a = format("{}_{}", "abc", 42);
+    println("format len()={}", len(a));
+    let h = sa_string_concat(STR_PTR("abc"), 3, STR_PTR("de"), 2);
+    println("concat handle={}", h);
+    let hn = sa_fmt_buffer_len(h);
+    println("concat len={}", hn);
+    let hp = sa_fmt_buffer_data(h);
+    let hptr = *hp;
+    let b0 = PTR_READ_U8(hptr);
+    println("b0={}", b0);
+    let b4 = PTR_READ_U8(PTR_BYTE_ADD(hptr, 4));
+    println("b4={}", b4);
+    return 0;
+}
+
+@test "probe3"() {
+    let a = format("{}_{}", "abc", 42);
+    if len(a) != 6 { panic(1); };
+}

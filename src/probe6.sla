@@ -1,0 +1,21 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "src/strutil.sla"
+
+fn main() -> i32 {
+    let a = s_from(STR_PTR("hello"), 5);
+    let b = s_cat(s_from(STR_PTR("hel"), 3), s_from(STR_PTR("lo"), 2));
+    let n = s_i64(-123);
+    let f = s_f64(3.5);
+    println("eq={} len={} b0={}", s_eq(a, b), s_len(b), s_byte(b, 0));
+    s_write(a); s_nl();
+    s_write(n); s_nl();
+    s_write(f); s_nl();
+    println("lit={}", s_eq_lit(a, STR_PTR("hello"), 5));
+    return 0;
+}
+
+@test "probe6"() {
+    let a = s_from(STR_PTR("hello"), 5);
+    if s_eq_lit(a, STR_PTR("hello"), 5) != true { panic(1); };
+}

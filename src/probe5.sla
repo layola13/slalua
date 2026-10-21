@@ -1,0 +1,56 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/ptr.sa"
+@import "src/rt.sa"
+
+fn str_eq_buf(a: u64, b: u64) -> bool {
+    let an = sa_fmt_buffer_len(a);
+    let bn = sa_fmt_buffer_len(b);
+    if an != bn {
+        return false;
+    };
+    let ap = sa_fmt_buffer_data(a);
+    let bp = sa_fmt_buffer_data(b);
+    let i: u64 = 0;
+    let ok = true;
+    while i < an {
+        let ca = SLA_BYTE_AT(ap, i);
+        let cb = SLA_BYTE_AT(bp, i);
+        if ca != cb {
+            ok = false;
+            i = an;
+        } else {
+            i = i + 1;
+        };
+    }
+    return ok;
+}
+
+fn print_buf(h: u64) -> void {
+    let p = sa_fmt_buffer_data(h);
+    let n = sa_fmt_buffer_len(h);
+    let pp = p;
+    sa_print_bytes(&pp, n);
+}
+
+fn main() -> i32 {
+    let a = sa_fmt_bytes(STR_PTR("hello"), STR_LEN("hello"));
+    let b = sa_fmt_bytes(STR_PTR("hel"), STR_LEN("hel"));
+    let c = sa_string_concat(STR_PTR("hel"), 3, STR_PTR("lo"), 2);
+    print_buf(a);
+    println("");
+    println("eq_ab={} eq_ac={} lena={} lenc={}", str_eq_buf(a, b), str_eq_buf(a, c), sa_fmt_buffer_len(a), sa_fmt_buffer_len(c));
+    let h = sa_fmt_i64(-42, 10);
+    print_buf(h);
+    println("");
+    return 0;
+}
+
+@test "probe5"() {
+    let a = sa_fmt_bytes(STR_PTR("hello"), STR_LEN("hello"));
+    let c = sa_string_concat(STR_PTR("hel"), 3, STR_PTR("lo"), 2);
+    if str_eq_buf(a, c) != true { panic(1); };
+    if sa_fmt_buffer_len(c) != 5 { panic(2); };
+}

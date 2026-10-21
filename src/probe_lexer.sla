@@ -1,0 +1,56 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/ptr.sa"
+@import "sa_std/fs.sa"
+@import "src/tok.sla"
+@import "src/rt.sa"
+@import "src/strutil.sla"
+@import "src/lexer.sla"
+
+fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
+    let buf = sa_fs_read_file(path_ptr, path_len, 4194304);
+    switch buf {
+        0 => {
+            return 0;
+        },
+        default => {},
+    };
+    return buf;
+}
+
+fn main() -> i32 {
+    let path = "../lua/testes/strings.lua";
+    let src = read_text(STR_PTR(path), STR_LEN(path));
+    if src == 0 {
+        println("read failed");
+        return 1;
+    };
+    let data = SLA_FS_BUFFER_DATA(src);
+    let n = SLA_FS_BUFFER_LEN(src);
+    let text = s_from(data, n);
+    println("handle={} raw={} bytes={}", src, n, s_len(text));
+    let lx = lex_source(text);
+    println("tokens={}", len(lx.toks));
+    println("err={} errline={}", lx.err, lx.errline);
+    let cap = len(lx.toks);
+    if cap > 24 {
+        cap = 24;
+    };
+    let i = 0;
+    while i < cap {
+        let t = lx.toks[i];
+        s_put_i64(t.kind);
+        s_write(s_from(STR_PTR("@"), 1));
+        s_put_i64(t.line);
+        s_write(s_from(STR_PTR(" "), 1));
+        if t.kind == TK_NAME || t.kind == TK_STR || t.kind == TK_INT || t.kind == TK_NUM {
+            s_write(t.s);
+        };
+        s_write(s_from(STR_PTR(" | "), 3));
+        i = i + 1;
+    }
+    println("");
+    return 0;
+}

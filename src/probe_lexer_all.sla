@@ -1,0 +1,109 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/ptr.sa"
+@import "sa_std/fs.sa"
+@import "src/tok.sla"
+@import "src/rt.sa"
+@import "src/strutil.sla"
+@import "src/lexer.sla"
+
+fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
+    let buf = sa_fs_read_file(path_ptr, path_len, 4194304);
+    switch buf {
+        0 => {
+            return 0;
+        },
+        default => {},
+    };
+    return buf;
+}
+
+fn lex_file(path_ptr: ptr, path_len: u64) -> void {
+    let src = read_text(path_ptr, path_len);
+    if src == 0 {
+        s_write(s_from(path_ptr, path_len));
+        println(" READ_FAIL");
+        return;
+    };
+    let data = SLA_FS_BUFFER_DATA(src);
+    let n = SLA_FS_BUFFER_LEN(src);
+    let text = s_from(data, n);
+    let lx = lex_source(text);
+    s_write(s_from(path_ptr, path_len));
+    println(" tokens={} err={} line={}", len(lx.toks), lx.err, lx.errline);
+    let st = sa_fs_read_buffer_free(src);
+}
+
+fn main() -> i32 {
+    let p0 = "../lua/testes/all.lua";
+    let p1 = "../lua/testes/api.lua";
+    let p2 = "../lua/testes/attrib.lua";
+    let p3 = "../lua/testes/big.lua";
+    let p4 = "../lua/testes/bitwise.lua";
+    let p5 = "../lua/testes/bwcoercion.lua";
+    let p6 = "../lua/testes/calls.lua";
+    let p7 = "../lua/testes/closure.lua";
+    let p8 = "../lua/testes/code.lua";
+    let p9 = "../lua/testes/constructs.lua";
+    let p10 = "../lua/testes/coroutine.lua";
+    let p11 = "../lua/testes/cstack.lua";
+    let p12 = "../lua/testes/db.lua";
+    let p13 = "../lua/testes/errors.lua";
+    let p14 = "../lua/testes/events.lua";
+    let p15 = "../lua/testes/files.lua";
+    let p16 = "../lua/testes/gc.lua";
+    let p17 = "../lua/testes/gengc.lua";
+    let p18 = "../lua/testes/goto.lua";
+    let p19 = "../lua/testes/heavy.lua";
+    let p20 = "../lua/testes/literals.lua";
+    let p21 = "../lua/testes/locals.lua";
+    let p22 = "../lua/testes/main.lua";
+    let p23 = "../lua/testes/math.lua";
+    let p24 = "../lua/testes/memerr.lua";
+    let p25 = "../lua/testes/nextvar.lua";
+    let p26 = "../lua/testes/pm.lua";
+    let p27 = "../lua/testes/sort.lua";
+    let p28 = "../lua/testes/strings.lua";
+    let p29 = "../lua/testes/tpack.lua";
+    let p30 = "../lua/testes/tracegc.lua";
+    let p31 = "../lua/testes/utf8.lua";
+    let p32 = "../lua/testes/vararg.lua";
+    let p33 = "../lua/testes/verybig.lua";
+    lex_file(STR_PTR(p0), STR_LEN(p0));
+    lex_file(STR_PTR(p1), STR_LEN(p1));
+    lex_file(STR_PTR(p2), STR_LEN(p2));
+    lex_file(STR_PTR(p3), STR_LEN(p3));
+    lex_file(STR_PTR(p4), STR_LEN(p4));
+    lex_file(STR_PTR(p5), STR_LEN(p5));
+    lex_file(STR_PTR(p6), STR_LEN(p6));
+    lex_file(STR_PTR(p7), STR_LEN(p7));
+    lex_file(STR_PTR(p8), STR_LEN(p8));
+    lex_file(STR_PTR(p9), STR_LEN(p9));
+    lex_file(STR_PTR(p10), STR_LEN(p10));
+    lex_file(STR_PTR(p11), STR_LEN(p11));
+    lex_file(STR_PTR(p12), STR_LEN(p12));
+    lex_file(STR_PTR(p13), STR_LEN(p13));
+    lex_file(STR_PTR(p14), STR_LEN(p14));
+    lex_file(STR_PTR(p15), STR_LEN(p15));
+    lex_file(STR_PTR(p16), STR_LEN(p16));
+    lex_file(STR_PTR(p17), STR_LEN(p17));
+    lex_file(STR_PTR(p18), STR_LEN(p18));
+    lex_file(STR_PTR(p19), STR_LEN(p19));
+    lex_file(STR_PTR(p20), STR_LEN(p20));
+    lex_file(STR_PTR(p21), STR_LEN(p21));
+    lex_file(STR_PTR(p22), STR_LEN(p22));
+    lex_file(STR_PTR(p23), STR_LEN(p23));
+    lex_file(STR_PTR(p24), STR_LEN(p24));
+    lex_file(STR_PTR(p25), STR_LEN(p25));
+    lex_file(STR_PTR(p26), STR_LEN(p26));
+    lex_file(STR_PTR(p27), STR_LEN(p27));
+    lex_file(STR_PTR(p28), STR_LEN(p28));
+    lex_file(STR_PTR(p29), STR_LEN(p29));
+    lex_file(STR_PTR(p30), STR_LEN(p30));
+    lex_file(STR_PTR(p31), STR_LEN(p31));
+    lex_file(STR_PTR(p32), STR_LEN(p32));
+    lex_file(STR_PTR(p33), STR_LEN(p33));
+    return 0;
+}

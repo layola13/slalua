@@ -1,0 +1,559 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+@import "src/tok.sla"
+@import "src/rt.sa"
+@import "src/strutil.sla"
+
+fn lx_is_digit(c: u8) -> bool {
+    return c >= 48 && c <= 57;
+}
+
+fn lx_is_hex(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    if c >= 97 && c <= 102 {
+        return true;
+    };
+    if c >= 65 && c <= 70 {
+        return true;
+    };
+    return false;
+}
+
+fn lx_hex_val(c: u8) -> i64 {
+    if c >= 48 && c <= 57 {
+        return (c - 48) as i64;
+    };
+    if c >= 97 && c <= 102 {
+        return ((c - 97) + 10) as i64;
+    };
+    return ((c - 65) + 10) as i64;
+}
+
+fn lx_is_alpha(c: u8) -> bool {
+    if c >= 97 && c <= 122 {
+        return true;
+    };
+    if c >= 65 && c <= 90 {
+        return true;
+    };
+    return c == 95;
+}
+
+fn lx_is_alnum(c: u8) -> bool {
+    return lx_is_alpha(c) || lx_is_digit(c);
+}
+
+fn lx_is_space(c: u8) -> bool {
+    return c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12;
+}
+
+struct Lexer {
+    src: u64,
+    len: u64,
+    pos: u64,
+    line: i64,
+    toks: Vec<Token>,
+    err: i64,
+    errline: i64,
+}
+
+fn lx_new(src: u64) -> Lexer {
+    return Lexer {
+        src: src,
+        len: s_len(src),
+        pos: 0,
+        line: 1,
+        toks: Vec::new(),
+        err: 0,
+        errline: 0,
+    };
+}
+
+impl Lexer {
+    fn peek(&self, off: u64) -> u8 {
+        let i = self.pos + off;
+        if i >= self.len {
+            return 0;
+        };
+        return s_byte(self.src, i);
+    }
+
+    fn take(&self) -> u8 {
+        let c = self.peek(0);
+        if c == 10 {
+            self.line = self.line + 1;
+        };
+        if self.pos < self.len {
+            self.pos = self.pos + 1;
+        };
+        return c;
+    }
+
+    fn fail(&self, line: i64) -> void {
+        if self.err == 0 {
+            self.err = 1;
+            self.errline = line;
+        };
+    }
+
+    fn add(&self, kind: i64, n: i64, f: f64, s: u64, aux: i64) -> void {
+        let t = token_new(kind, self.line, n, f, s, aux);
+        self.toks.push(t);
+    }
+
+    fn long_open(&self) -> i64 {
+        if self.peek(0) != 91 {
+            return -1;
+        };
+        let j = 1;
+        let level = 0;
+        while self.peek(j) == 61 {
+            j = j + 1;
+            level = level + 1;
+        }
+        if self.peek(j) != 91 {
+            return -1;
+        };
+        self.pos = self.pos + j + 1;
+        return level;
+    }
+
+    fn long_close(&self, level: i64) -> bool {
+        if self.peek(0) != 93 {
+            return false;
+        };
+        let j: u64 = 1;
+        let k: i64 = 0;
+        while k < level {
+            if self.peek(j) != 61 {
+                return false;
+            };
+            j = j + 1;
+            k = k + 1;
+        }
+        if self.peek(j) != 93 {
+            return false;
+        };
+        self.pos = self.pos + j + 1;
+        return true;
+    }
+
+    fn skip_long(&self, level: i64, line: i64) -> void {
+        while self.pos < self.len {
+            if self.long_close(level) {
+                return;
+            };
+            self.take();
+        }
+        self.fail(line);
+    }
+
+    fn read_long(&self, level: i64, line: i64) -> u64 {
+        let out = s_from(STR_PTR(""), 0);
+        while self.pos < self.len {
+            if self.long_close(level) {
+                return out;
+            };
+            let c = self.take();
+            out = s_cat(out, s_char(c));
+        }
+        self.fail(line);
+        return out;
+    }
+
+    fn skip_ws(&self) -> void {
+        let going = true;
+        while going {
+            if self.pos >= self.len {
+                going = false;
+                continue;
+            };
+            let c = self.peek(0);
+            if lx_is_space(c) {
+                self.take();
+                continue;
+            };
+            if c == 45 && self.peek(1) == 45 {
+                self.take();
+                self.take();
+                if self.peek(0) == 91 {
+                    let lvl = self.long_open();
+                    if lvl >= 0 {
+                        self.skip_long(lvl, self.line);
+                        continue;
+                    };
+                };
+                while self.pos < self.len && self.peek(0) != 10 {
+                    self.take();
+                }
+                continue;
+            };
+            going = false;
+        }
+    }
+
+    fn read_quoted(&self, quote: u8, line: i64) -> u64 {
+        let out = s_from(STR_PTR(""), 0);
+        self.take();
+        while self.pos < self.len {
+            let c = self.take();
+            if c == quote {
+                return out;
+            };
+            if c == 10 {
+                self.fail(line);
+                return out;
+            };
+            if c != 92 {
+                out = s_cat(out, s_char(c));
+                continue;
+            };
+            let e = self.take();
+            if e == 110 {
+                out = s_cat(out, s_char(10));
+                continue;
+            };
+            if e == 116 {
+                out = s_cat(out, s_char(9));
+                continue;
+            };
+            if e == 114 {
+                out = s_cat(out, s_char(13));
+                continue;
+            };
+            if e == 97 {
+                out = s_cat(out, s_char(7));
+                continue;
+            };
+            if e == 98 {
+                out = s_cat(out, s_char(8));
+                continue;
+            };
+            if e == 102 {
+                out = s_cat(out, s_char(12));
+                continue;
+            };
+            if e == 118 {
+                out = s_cat(out, s_char(11));
+                continue;
+            };
+            if e == 120 {
+                let h1 = lx_hex_val(self.take());
+                let h2 = lx_hex_val(self.take());
+                out = s_cat(out, s_char((h1 * 16 + h2) as u8));
+                continue;
+            };
+            if lx_is_digit(e) {
+                let v = (e - 48) as i64;
+                let cnt = 1;
+                while cnt < 3 && lx_is_digit(self.peek(0)) {
+                    v = v * 10 + (self.take() as i64) - 48;
+                    cnt = cnt + 1;
+                }
+                out = s_cat(out, s_char(v as u8));
+                continue;
+            };
+            if e == 122 {
+                while self.pos < self.len && lx_is_space(self.peek(0)) {
+                    self.take();
+                }
+                continue;
+            };
+            out = s_cat(out, s_char(e));
+        }
+        self.fail(line);
+        return out;
+    }
+
+    fn read_name(&self) -> u64 {
+        let start = self.pos;
+        while self.pos < self.len && lx_is_alnum(self.peek(0)) {
+            self.take();
+        }
+        return s_slice(self.src, start, self.pos - start);
+    }
+
+    fn parse_int_text(&self, text: u64) -> i64 {
+        let n = s_len(text);
+        let mut_hex = false;
+        let i0: u64 = 0;
+        if n >= 2 && s_byte(text, 0) == 48 {
+            let c1 = s_byte(text, 1);
+            if c1 == 120 || c1 == 88 {
+                mut_hex = true;
+                i0 = 2;
+            };
+        };
+        let v: i64 = 0;
+        let i = i0;
+        while i < n {
+            let c = s_byte(text, i);
+            if mut_hex {
+                v = v * 16 + lx_hex_val(c);
+            } else {
+                v = v * 10 + ((c - 48) as i64);
+            };
+            i = i + 1;
+        }
+        return v;
+    }
+
+    fn read_number(&self) -> void {
+        let start = self.pos;
+        let is_float = false;
+        let hex = self.peek(0) == 48 && (self.peek(1) == 120 || self.peek(1) == 88);
+        if hex {
+            self.take();
+            self.take();
+            while lx_is_hex(self.peek(0)) {
+                self.take();
+            }
+            if self.peek(0) == 46 {
+                self.take();
+                while lx_is_hex(self.peek(0)) {
+                    self.take();
+                }
+                is_float = true;
+            };
+            if self.peek(0) == 112 || self.peek(0) == 80 {
+                is_float = true;
+                self.take();
+                if self.peek(0) == 43 || self.peek(0) == 45 {
+                    self.take();
+                };
+                while lx_is_digit(self.peek(0)) {
+                    self.take();
+                }
+            }
+        };
+        if hex == false {
+            while lx_is_digit(self.peek(0)) {
+                self.take();
+            }
+            if self.peek(0) == 46 {
+                is_float = true;
+                self.take();
+                while lx_is_digit(self.peek(0)) {
+                    self.take();
+                }
+            };
+            if self.peek(0) == 101 || self.peek(0) == 69 {
+                is_float = true;
+                self.take();
+                if self.peek(0) == 43 || self.peek(0) == 45 {
+                    self.take();
+                };
+                while lx_is_digit(self.peek(0)) {
+                    self.take();
+                }
+            }
+        };
+        let text = s_slice(self.src, start, self.pos - start);
+        if is_float {
+            let fv = SLA_PARSE_F64(text);
+            self.add(TK_NUM, 0, fv, text, 0);
+            return;
+        };
+        let iv = self.parse_int_text(text);
+        self.add(TK_INT, iv, 0.0, text, 0);
+    }
+
+    fn read_token(&self) -> void {
+        if self.pos >= self.len {
+            self.add(TK_EOF, 0, 0.0, 0, 0);
+            return;
+        };
+        let c = self.peek(0);
+        if lx_is_alpha(c) {
+            let name = self.read_name();
+            let kind = lx_keyword(name);
+            self.add(kind, 0, 0.0, name, 0);
+            return;
+        };
+        if lx_is_digit(c) || (c == 46 && lx_is_digit(self.peek(1))) {
+            self.read_number();
+            return;
+        };
+        if c == 34 || c == 39 {
+            let line = self.line;
+            let str = self.read_quoted(c, line);
+            self.add(TK_STR, 0, 0.0, str, 0);
+            return;
+        };
+        if c == 91 {
+            let line = self.line;
+            let lvl = self.long_open();
+            if lvl >= 0 {
+                let str = self.read_long(lvl, line);
+                self.add(TK_STR, 0, 0.0, str, 0);
+                return;
+            };
+            self.take();
+            self.add(TK_LBRACK, 0, 0.0, 0, 0);
+            return;
+        };
+        self.read_symbol(c);
+    }
+
+    fn read_symbol(&self, c: u8) -> void {
+        if c == 46 {
+            if self.peek(1) == 46 && self.peek(2) == 46 {
+                self.take();
+                self.take();
+                self.take();
+                self.add(TK_ELLIPSIS, 0, 0.0, 0, 0);
+                return;
+            };
+            if self.peek(1) == 46 {
+                self.take();
+                self.take();
+                self.add(TK_CONCAT, 0, 0.0, 0, 0);
+                return;
+            };
+            self.take();
+            self.add(TK_DOT, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 61 {
+            self.take();
+            if self.peek(0) == 61 {
+                self.take();
+                self.add(TK_EQ, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_ASSIGN, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 126 {
+            self.take();
+            if self.peek(0) == 61 {
+                self.take();
+                self.add(TK_NE, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_TILDE, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 60 {
+            self.take();
+            if self.peek(0) == 61 {
+                self.take();
+                self.add(TK_LE, 0, 0.0, 0, 0);
+                return;
+            };
+            if self.peek(0) == 60 {
+                self.take();
+                self.add(TK_SHL, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_LT, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 62 {
+            self.take();
+            if self.peek(0) == 61 {
+                self.take();
+                self.add(TK_GE, 0, 0.0, 0, 0);
+                return;
+            };
+            if self.peek(0) == 62 {
+                self.take();
+                self.add(TK_SHR, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_GT, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 47 {
+            self.take();
+            if self.peek(0) == 47 {
+                self.take();
+                self.add(TK_IDIV, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_DIV, 0, 0.0, 0, 0);
+            return;
+        };
+        if c == 58 {
+            self.take();
+            if self.peek(0) == 58 {
+                self.take();
+                self.add(TK_COLONCOLON, 0, 0.0, 0, 0);
+                return;
+            };
+            self.add(TK_COLON, 0, 0.0, 0, 0);
+            return;
+        };
+        self.take();
+        if c == 43 { self.add(TK_ADD, 0, 0.0, 0, 0); return; };
+        if c == 45 { self.add(TK_SUB, 0, 0.0, 0, 0); return; };
+        if c == 42 { self.add(TK_MUL, 0, 0.0, 0, 0); return; };
+        if c == 37 { self.add(TK_MOD, 0, 0.0, 0, 0); return; };
+        if c == 94 { self.add(TK_POW, 0, 0.0, 0, 0); return; };
+        if c == 35 { self.add(TK_HASH, 0, 0.0, 0, 0); return; };
+        if c == 38 { self.add(TK_AMP, 0, 0.0, 0, 0); return; };
+        if c == 124 { self.add(TK_PIPE, 0, 0.0, 0, 0); return; };
+        if c == 40 { self.add(TK_LPAREN, 0, 0.0, 0, 0); return; };
+        if c == 41 { self.add(TK_RPAREN, 0, 0.0, 0, 0); return; };
+        if c == 123 { self.add(TK_LBRACE, 0, 0.0, 0, 0); return; };
+        if c == 125 { self.add(TK_RBRACE, 0, 0.0, 0, 0); return; };
+        if c == 93 { self.add(TK_RBRACK, 0, 0.0, 0, 0); return; };
+        if c == 59 { self.add(TK_SEMI, 0, 0.0, 0, 0); return; };
+        if c == 44 { self.add(TK_COMMA, 0, 0.0, 0, 0); return; };
+        self.fail(self.line);
+    }
+
+    fn lex_all(&self) -> void {
+        if self.peek(0) == 35 {
+            while self.pos < self.len && self.peek(0) != 10 {
+                self.take();
+            }
+        };
+        let going = true;
+        while going {
+            self.skip_ws();
+            if self.pos >= self.len {
+                going = false;
+            } else {
+                self.read_token();
+            };
+        }
+        self.add(TK_EOF, 0, 0.0, 0, 0);
+    }
+}
+
+fn lx_keyword(s: u64) -> i64 {
+    if s_eq_lit(s, STR_PTR("and"), 3) { return KW_AND; };
+    if s_eq_lit(s, STR_PTR("break"), 5) { return KW_BREAK; };
+    if s_eq_lit(s, STR_PTR("do"), 2) { return KW_DO; };
+    if s_eq_lit(s, STR_PTR("else"), 4) { return KW_ELSE; };
+    if s_eq_lit(s, STR_PTR("elseif"), 6) { return KW_ELSEIF; };
+    if s_eq_lit(s, STR_PTR("end"), 3) { return KW_END; };
+    if s_eq_lit(s, STR_PTR("false"), 5) { return KW_FALSE; };
+    if s_eq_lit(s, STR_PTR("for"), 3) { return KW_FOR; };
+    if s_eq_lit(s, STR_PTR("function"), 8) { return KW_FUNCTION; };
+    if s_eq_lit(s, STR_PTR("goto"), 4) { return KW_GOTO; };
+    if s_eq_lit(s, STR_PTR("if"), 2) { return KW_IF; };
+    if s_eq_lit(s, STR_PTR("in"), 2) { return KW_IN; };
+    if s_eq_lit(s, STR_PTR("local"), 5) { return KW_LOCAL; };
+    if s_eq_lit(s, STR_PTR("nil"), 3) { return KW_NIL; };
+    if s_eq_lit(s, STR_PTR("not"), 3) { return KW_NOT; };
+    if s_eq_lit(s, STR_PTR("or"), 2) { return KW_OR; };
+    if s_eq_lit(s, STR_PTR("repeat"), 6) { return KW_REPEAT; };
+    if s_eq_lit(s, STR_PTR("return"), 6) { return KW_RETURN; };
+    if s_eq_lit(s, STR_PTR("then"), 4) { return KW_THEN; };
+    if s_eq_lit(s, STR_PTR("true"), 4) { return KW_TRUE; };
+    if s_eq_lit(s, STR_PTR("until"), 5) { return KW_UNTIL; };
+    if s_eq_lit(s, STR_PTR("while"), 5) { return KW_WHILE; };
+    return TK_NAME;
+}
+
+fn lex_source(src: u64) -> Lexer {
+    let lx = lx_new(src);
+    lx.lex_all();
+    return lx;
+}

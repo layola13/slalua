@@ -1,0 +1,18 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fs.sa"
+@import "src/rt.sa"
+
+fn main() -> i32 {
+    let path = "src/probe1.sla";
+    let buf = SLA_FS_READ_TO_STRING(STR_PTR(path), STR_LEN(path), 1048576);
+    if buf == 0 {
+        println("read failed");
+        return 1;
+    };
+    let st = 0;
+    SLA_FS_BUFFER_FREE(st, buf);
+    println("status={}", st);
+    return 0;
+}

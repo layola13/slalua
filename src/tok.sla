@@ -1,0 +1,82 @@
+const TK_EOF: i64 = 0;
+const TK_NAME: i64 = 1;
+const TK_INT: i64 = 2;
+const TK_NUM: i64 = 3;
+const TK_STR: i64 = 4;
+
+const TK_ADD: i64 = 10;
+const TK_SUB: i64 = 11;
+const TK_MUL: i64 = 12;
+const TK_DIV: i64 = 13;
+const TK_IDIV: i64 = 14;
+const TK_MOD: i64 = 15;
+const TK_POW: i64 = 16;
+const TK_HASH: i64 = 17;
+const TK_AMP: i64 = 18;
+const TK_TILDE: i64 = 19;
+const TK_PIPE: i64 = 20;
+const TK_SHL: i64 = 21;
+const TK_SHR: i64 = 22;
+const TK_EQ: i64 = 23;
+const TK_NE: i64 = 24;
+const TK_LE: i64 = 25;
+const TK_GE: i64 = 26;
+const TK_LT: i64 = 27;
+const TK_GT: i64 = 28;
+const TK_ASSIGN: i64 = 29;
+const TK_LPAREN: i64 = 30;
+const TK_RPAREN: i64 = 31;
+const TK_LBRACE: i64 = 32;
+const TK_RBRACE: i64 = 33;
+const TK_LBRACK: i64 = 34;
+const TK_RBRACK: i64 = 35;
+const TK_COLONCOLON: i64 = 36;
+const TK_SEMI: i64 = 37;
+const TK_COLON: i64 = 38;
+const TK_COMMA: i64 = 39;
+const TK_DOT: i64 = 40;
+const TK_CONCAT: i64 = 41;
+const TK_ELLIPSIS: i64 = 42;
+
+const KW_AND: i64 = 100;
+const KW_BREAK: i64 = 101;
+const KW_DO: i64 = 102;
+const KW_ELSE: i64 = 103;
+const KW_ELSEIF: i64 = 104;
+const KW_END: i64 = 105;
+const KW_FALSE: i64 = 106;
+const KW_FOR: i64 = 107;
+const KW_FUNCTION: i64 = 108;
+const KW_GOTO: i64 = 109;
+const KW_IF: i64 = 110;
+const KW_IN: i64 = 111;
+const KW_LOCAL: i64 = 112;
+const KW_NIL: i64 = 113;
+const KW_NOT: i64 = 114;
+const KW_OR: i64 = 115;
+const KW_REPEAT: i64 = 116;
+const KW_RETURN: i64 = 117;
+const KW_THEN: i64 = 118;
+const KW_TRUE: i64 = 119;
+const KW_UNTIL: i64 = 120;
+const KW_WHILE: i64 = 121;
+
+struct Token {
+    kind: i64,
+    line: i64,
+    n: i64,
+    f: f64,
+    s: u64,
+    aux: i64,
+}
+
+fn token_new(kind: i64, line: i64, n: i64, f: f64, s: u64, aux: i64) -> Token {
+    return Token {
+        kind: kind,
+        line: line,
+        n: n,
+        f: f,
+        s: s,
+        aux: aux,
+    };
+}

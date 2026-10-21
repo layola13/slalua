@@ -1,0 +1,77 @@
+@import "sa_std/fs.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+
+[MACRO] SLA_FS_READ_TO_STRING %out_buffer, %path, %path_len, %max_bytes
+    __sla_fs_read_status_%out_buffer = 0
+    EXPAND FS_READ_TO_STRING __sla_fs_read_status_%out_buffer, %out_buffer, %path, %path_len, %max_bytes
+    !__sla_fs_read_status_%out_buffer
+[END_MACRO]
+
+[MACRO] SLA_FS_BUFFER_DATA %out_ptr, %buffer
+    EXPAND FS_READ_BUFFER_DATA %out_ptr, %buffer
+[END_MACRO]
+
+[MACRO] SLA_FS_BUFFER_LEN %out_len, %buffer
+    EXPAND FS_READ_BUFFER_LEN %out_len, %buffer
+[END_MACRO]
+
+[MACRO] SLA_FS_BUFFER_FREE %out_status, %buffer
+    EXPAND FS_READ_BUFFER_FREE %out_status, %buffer
+[END_MACRO]
+
+[MACRO] SLA_BYTE_AT %out_byte, %ptr, %offset
+    __sla_ba_addr_%out_byte = ptr_add %ptr, %offset
+    %out_byte = load __sla_ba_addr_%out_byte+0 as u8
+    !__sla_ba_addr_%out_byte
+[END_MACRO]
+
+[MACRO] SLA_PTR_ADD %out_ptr, %base, %offset
+    %out_ptr = ptr_add %base, %offset
+[END_MACRO]
+
+[MACRO] SLA_BUF_PTR %out_ptr, %buffer
+    __sla_buf_raw_%out_ptr = call @sa_fmt_buffer_data(%buffer)
+    %out_ptr = ptr_add __sla_buf_raw_%out_ptr, 0
+    !__sla_buf_raw_%out_ptr
+[END_MACRO]
+
+[MACRO] SLA_BUF_SLICE %out_buffer, %buffer, %start, %len
+    __sbs_data_%out_buffer = call @sa_fmt_buffer_data(%buffer)
+    __sbs_ptr_%out_buffer = ptr_add __sbs_data_%out_buffer, %start
+    %out_buffer = call @sa_fmt_bytes(&__sbs_ptr_%out_buffer, %len)
+    !__sbs_ptr_%out_buffer
+    !__sbs_data_%out_buffer
+[END_MACRO]
+
+[MACRO] SLA_BUF_CONCAT %out_buffer, %left, %right
+    __sbc_lp_%out_buffer = call @sa_fmt_buffer_data(%left)
+    __sbc_ll_%out_buffer = call @sa_fmt_buffer_len(%left)
+    __sbc_rp_%out_buffer = call @sa_fmt_buffer_data(%right)
+    __sbc_rl_%out_buffer = call @sa_fmt_buffer_len(%right)
+    %out_buffer = call @sa_string_concat(__sbc_lp_%out_buffer, __sbc_ll_%out_buffer, __sbc_rp_%out_buffer, __sbc_rl_%out_buffer)
+    !__sbc_rl_%out_buffer
+    !__sbc_rp_%out_buffer
+    !__sbc_ll_%out_buffer
+    !__sbc_lp_%out_buffer
+[END_MACRO]
+
+[MACRO] SLA_PARSE_F64 %out_value, %buffer
+    __spf_ptr_%out_value = call @sa_fmt_buffer_data(%buffer)
+    __spf_len_%out_value = call @sa_fmt_buffer_len(%buffer)
+    %out_value = call @sa_parse_float(__spf_ptr_%out_value, __spf_len_%out_value)
+    !__spf_len_%out_value
+    !__spf_ptr_%out_value
+[END_MACRO]
+
+[MACRO] SLA_PRINT_BUF %buffer
+    __spb_ptr_%buffer = call @sa_fmt_buffer_data(%buffer)
+    __spb_len_%buffer = call @sa_fmt_buffer_len(%buffer)
+    call @sa_print_bytes(&__spb_ptr_%buffer, __spb_len_%buffer)
+    !__spb_len_%buffer
+    !__spb_ptr_%buffer
+[END_MACRO]
+
+[MACRO] SLA_CHAR_STR %out_buffer, %code
+    %out_buffer = call @sa_string_from_char_code(%code)
+[END_MACRO]

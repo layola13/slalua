@@ -35,3 +35,111 @@ sa build-exe /tmp/probe1.sa -o /tmp/probe1
 ```
 
 Status: open. Needs minimization (see `src/probe*.sla`).
+
+## D-002 struct literals for types from another `@import` fail to parse
+
+Reproducer: `src/probe_struct_def.sla`, `src/probe_struct_use.sla`.
+
+`probe_struct_def.sla` declares `struct Foo`, and `probe_struct_use.sla`
+imports it and writes `let a = Foo { x: 1, y: 2 };`.
+
+Observed:
+
+```
+Syntax Error: failed to parse src/probe_struct_use.sla:5:17: error.SyntaxError
+  |     let a = Foo { x: 1, y: 2 };
+  |                 ^ found '{', expected semicolon
+```
+
+The parser only recognises a struct literal when the type name is in its local
+`known_types` list, but imported type names are not seeded before the importing
+module is parsed. Declaring `Foo` in the same file works.
+
+Expected: imported type names participate in struct-literal parsing.
+
+Workaround: define a constructor in the module that owns the type, e.g.
+`fn token_new(...) -> Token { return Token { ... }; }`, and call the
+constructor from importers. `src/tok.sla` does this.
+
+Status: open.
+
+## D-003 statement `if`/`else` still requires equal branch tail types
+
+Reproducer: `src/probe_if_tail.sla`.
+
+A nested `if`/`else` statement, terminated with `;`, inside a `while` body in an
+`impl` method.
+
+Observed:
+
+```
+$ sla check src/probe_if_tail.sla
+Type Check Error: failed to verify types: if expression branch type mismatch
+(error.TypeMismatch)
+```
+
+The then-branch tail is an assignment (`bool`) while one else-branch tail is a
+call returning `u8` (or a nested statement), so `blockTailExprType` compares two
+primitive types even though the `if` is used as a statement.
+
+Expected: a semicolon-terminated `if` statement discards its value and does not
+require both branches to produce the same tail type.
+
+Workaround: flatten nested `else` chains into guard-style `if` statements with
+`continue`/`return` in each branch, so no branch has a mismatched tail
+expression. `src/lexer.sla` was rewritten this way.
+
+Status: open.
+
+## D-004 `FS_READ_BUFFER_FREE` macro traps with `UseAfterMove`
+
+Reproducer: `src/probe_free_macro.sla`.
+
+The standard macro expands to:
+
+```
+%out_status = call @sa_fs_read_buffer_free(^%buffer)
+```
+
+Observed after `sla build` + `sa build-exe`:
+
+```
+{"trap":"UseAfterMove","trap_code":1009,...,
+ "source_text":"    !buf","register":"buf",
+ "message":"moved value is no longer usable"}
+```
+
+Expected: the handle is consumed once and the buffer is released.
+
+Workaround: call the extern directly without the move prefix:
+
+```
+let st = sa_fs_read_buffer_free(buf);
+```
+
+The same pattern is used by `sa_plugin_sla/tests/test_unit_fallible_extern_payload_direct.sla`.
+`src/probe_lexer_all.sla` frees every source buffer this way.
+
+Status: open.
+
+## D-005 `FS_READ_TO_STRING` rejects non-UTF-8 source files
+
+Reproducer: `src/probe_utf8_read.sla` against
+`../lua/testes/strings.lua` (ISO-8859 bytes inside Lua string literals).
+
+Observed:
+
+```
+text_handle=0 raw_handle=4
+```
+
+`SLA_FS_READ_TO_STRING` returns 0 for the file, while the byte-oriented
+`sa_fs_read_file` reads it successfully.
+
+Expected: a compiler frontend must be able to load arbitrary source bytes;
+UTF-8 validation belongs to later stages.
+
+Workaround: use `sa_fs_read_file` + `SLA_FS_BUFFER_DATA/LEN` and copy bytes with
+`s_from`. The lexer now reads all 34 Lua test files this way.
+
+Status: open (behavioural limitation, documented).

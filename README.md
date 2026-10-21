@@ -20,7 +20,10 @@ The secondary goal is to find, minimize and fix real defects in Sla itself.
 
 ```
 src/main.sla       entry point / CLI
-src/lexer.sla      Lua lexer
+src/tok.sla        token kinds + Token struct
+src/lexer.sla      Lua 5.5 lexer (comments, long strings, numerals)
+src/rt.sa          low-level macros (file/format buffer access)
+src/strutil.sla    string helpers over sa_fmt buffer handles
 src/ast.sla        arena AST + node ids
 src/parser.sla     recursive-descent parser
 src/value.sla      Value / Table / Function arenas
@@ -31,8 +34,21 @@ docs/sla-defects.md  defects found while porting
 
 ## Status
 
-Early bootstrap. Lexer/parser/evaluator are being written incrementally; each
-stage is compiled with `sla check`, `sla build` and executed before moving on.
+Lexer complete. It tokenizes all 34 files in the Lua 5.5 `testes/` suite
+without errors (including `#` shebangs, long-bracket strings/numerals and
+ISO-8859 bytes); the largest file, `math.lua`, produces 8746 tokens. Parser,
+evaluator and stdlib are next.
+
+Run the lexer checks with:
+
+```sh
+sla build src/probe_lexer_all.sla --out .sla-cache/lexall.sa
+sa build-exe .sla-cache/lexall.sa -o /tmp/lexall
+/tmp/lexall
+```
+
+Each stage is compiled with `sla check`, `sla build` and executed before moving
+on. Defects found so far are tracked in `docs/sla-defects.md`.
 
 ## Build
 

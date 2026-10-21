@@ -1,0 +1,21 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/ptr.sa"
+@import "src/rt.sa"
+
+fn main() -> i32 {
+    let h = sa_string_concat(STR_PTR("abc"), 3, STR_PTR("de"), 2);
+    let hptr = sa_fmt_buffer_data(h);
+    let b0 = SLA_BYTE_AT(hptr, 0);
+    let b4 = SLA_BYTE_AT(hptr, 4);
+    println("cat0={} cat4={}", b0, b4);
+    return 0;
+}
+
+@test "probe4"() {
+    let s = "abcdef";
+    let p = STR_PTR(s);
+    if SLA_BYTE_AT(p, 4) != 101 { panic(1); };
+}

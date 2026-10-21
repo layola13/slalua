@@ -1,0 +1,45 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/ptr.sa"
+@import "sa_std/fs.sa"
+@import "sa_std/env.sa"
+@import "src/rt.sa"
+
+fn byte_at(data: ptr, i: u64) -> u8 {
+    return PTR_READ_U8(PTR_BYTE_ADD(data, i));
+}
+
+fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
+    return SLA_FS_READ_TO_STRING(path_ptr, path_len, 1048576);
+}
+
+fn main() -> i32 {
+    let path = "src/probe1.sla";
+    let buf = read_text(STR_PTR(path), STR_LEN(path));
+    if buf == 0 {
+        println("read failed");
+        return 1;
+    };
+    let data = SLA_FS_BUFFER_DATA(buf);
+    let n = SLA_FS_BUFFER_LEN(buf);
+    let joined = format("{}_{}", "abc", 42);
+    println("len={} first={} joined={} jlen={}", n, byte_at(data, 1), joined, STR_LEN(joined));
+    let args = sa_env_args_json();
+    let aptr = sa_env_buffer_data(args);
+    let alen = sa_env_buffer_len(args);
+    let ap = *aptr;
+    println("args_len={}", alen);
+    let i: u64 = 0;
+    while i < alen && i < 80 {
+        let c = PTR_READ_U8(PTR_BYTE_ADD(ap, i));
+        println("arg byte {} = {}", i, c);
+        i = i + 1;
+    }
+    return 0;
+}
+
+@test "probe2"() {
+    let joined = format("{}_{}", "abc", 42);
+    if !str_eq(joined, "abc_42") { panic(1); };
+}

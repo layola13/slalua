@@ -1,0 +1,107 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/ptr.sa"
+@import "src/rt.sa"
+
+fn s_len(s: u64) -> u64 {
+    return sa_fmt_buffer_len(s);
+}
+
+fn s_byte(s: u64, i: u64) -> u8 {
+    let p = sa_fmt_buffer_data(s);
+    return SLA_BYTE_AT(p, i);
+}
+
+fn s_eq(a: u64, b: u64) -> bool {
+    let an = sa_fmt_buffer_len(a);
+    let bn = sa_fmt_buffer_len(b);
+    if an != bn {
+        return false;
+    };
+    let ap = sa_fmt_buffer_data(a);
+    let bp = sa_fmt_buffer_data(b);
+    let i: u64 = 0;
+    let ok = true;
+    while i < an {
+        let ca = SLA_BYTE_AT(ap, i);
+        let cb = SLA_BYTE_AT(bp, i);
+        if ca != cb {
+            ok = false;
+            i = an;
+        } else {
+            i = i + 1;
+        };
+    }
+    return ok;
+}
+
+fn s_eq_lit(a: u64, lit: ptr, lit_len: u64) -> bool {
+    let an = sa_fmt_buffer_len(a);
+    if an != lit_len {
+        return false;
+    };
+    let ap = sa_fmt_buffer_data(a);
+    let i: u64 = 0;
+    let ok = true;
+    while i < an {
+        let ca = SLA_BYTE_AT(ap, i);
+        let cb = SLA_BYTE_AT(lit, i);
+        if ca != cb {
+            ok = false;
+            i = an;
+        } else {
+            i = i + 1;
+        };
+    }
+    return ok;
+}
+
+fn s_slice(s: u64, start: u64, n: u64) -> u64 {
+    return SLA_BUF_SLICE(s, start, n);
+}
+
+fn s_cat(a: u64, b: u64) -> u64 {
+    return SLA_BUF_CONCAT(a, b);
+}
+
+fn s_i64(v: i64) -> u64 {
+    return sa_fmt_i64(v, 10);
+}
+
+fn s_f64(v: f64) -> u64 {
+    return sa_fmt_f64(v, 14);
+}
+
+fn s_bool(v: bool) -> u64 {
+    if v {
+        return sa_fmt_bytes(STR_PTR("true"), 4);
+    };
+    return sa_fmt_bytes(STR_PTR("false"), 5);
+}
+
+fn s_from(p: ptr, n: u64) -> u64 {
+    return sa_fmt_bytes(p, n);
+}
+
+fn s_char(c: u8) -> u64 {
+    return SLA_CHAR_STR(c);
+}
+
+fn s_write(s: u64) -> void {
+    SLA_PRINT_BUF(s);
+}
+
+fn s_put_i64(v: i64) -> void {
+    let s = s_i64(v);
+    s_write(s);
+}
+
+fn s_put_str(s: u64) -> void {
+    s_write(s);
+}
+
+fn s_nl() -> void {
+    println("");
+}

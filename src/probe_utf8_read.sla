@@ -1,0 +1,13 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fs.sa"
+@import "src/rt.sa"
+
+fn main() -> i32 {
+    let path = "../lua/testes/strings.lua";
+    let text = SLA_FS_READ_TO_STRING(STR_PTR(path), STR_LEN(path), 4194304);
+    let raw = sa_fs_read_file(STR_PTR(path), STR_LEN(path), 4194304);
+    println("text_handle={} raw_handle={}", text, raw);
+    return 0;
+}
