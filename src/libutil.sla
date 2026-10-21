@@ -55,6 +55,104 @@ fn bs_pos(p: i64, n: i64) -> i64 {
 
 
 impl Interp {
+fn s_index_of(&self, s: u64, sub: u64) -> i64 {
+    let n = s_len(s) as i64;
+    let m = s_len(sub) as i64;
+    if m == 0 {
+        return 0;
+    };
+    if m > n {
+        return -1;
+    };
+    let i = 0;
+    let limit = n - m;
+    while i <= limit {
+        let j = 0;
+        let same = true;
+        while j < m {
+            if s_byte(s, (i + j) as u64) != s_byte(sub, j as u64) {
+                same = false;
+                break;
+            };
+            j = j + 1;
+        }
+        if same {
+            return i;
+        };
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn s_replace_all(&self, s: u64, from: u64, to: u64) -> u64 {
+    let out = bs_str(STR_PTR(""), 0);
+    let n = s_len(s) as i64;
+    let m = s_len(from) as i64;
+    let i = 0;
+    while i < n {
+        let matched = false;
+        if m > 0 && i + m <= n {
+            let j = 0;
+            let same = true;
+            while j < m {
+                if s_byte(s, (i + j) as u64) != s_byte(from, j as u64) {
+                    same = false;
+                    break;
+                };
+                j = j + 1;
+            }
+            if same {
+                matched = true;
+            };
+        };
+        if matched {
+            out = s_cat(out, to);
+            i = i + m;
+            continue;
+        };
+        out = s_cat(out, s_char(s_byte(s, i as u64)));
+        i = i + 1;
+    }
+    return out;
+}
+
+fn s_split(&self, s: u64, sep: u64) -> Vec<Value> {
+    let out = Vec::new();
+    let n = s_len(s) as i64;
+    let m = s_len(sep) as i64;
+    let start = 0;
+    let i = 0;
+    while i <= n {
+        let matched = false;
+        if m > 0 && i + m <= n {
+            let j = 0;
+            let same = true;
+            while j < m {
+                if s_byte(s, (i + j) as u64) != s_byte(sep, j as u64) {
+                    same = false;
+                    break;
+                };
+                j = j + 1;
+            }
+            if same {
+                matched = true;
+            };
+        };
+        if matched {
+            out.push(v_str(s_slice(s, start as u64, (i - start) as u64)));
+            i = i + m;
+            start = i;
+            continue;
+        };
+        i = i + 1;
+    }
+    if start < n {
+        out.push(v_str(s_slice(s, start as u64, (n - start) as u64)));
+    };
+    return out;
+}
+
+
     fn bi_int(&self, v: Value, d: i64) -> i64 {
         if v.tag == VT_INT {
             return v.i;

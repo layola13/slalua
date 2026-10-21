@@ -1,0 +1,1 @@
+@extern sa_std_fs_exists(&path: ptr, path_len: u64) -> i32

@@ -101,6 +101,7 @@ impl Interp {
         self.table_set_str(pkg, bs_str(STR_PTR("cpath"), 5), v_str(bs_str(STR_PTR(""), 0)));
         self.table_set_str(pkg, bs_str(STR_PTR("config"), 6), v_str(bs_str(STR_PTR("/\n;\n?\n!\n-\n"), 10)));
         self.table_set_str(self.globals, bs_str(STR_PTR("package"), 7), v_table(pkg));
+        self.table_set_str(pkg, bs_str(STR_PTR("searchpath"), 10), v_builtin(B_PKG_SEARCHPATH));
         self.table_set_str(self.globals, bs_str(STR_PTR("_G"), 2), v_table(self.globals));
         self.table_set_str(self.globals, bs_str(STR_PTR("_ENV"), 4), v_table(self.globals));
         self.table_set_str(self.globals, bs_str(STR_PTR("_VERSION"), 8), v_str(bs_str(STR_PTR("Lua 5.5"), 7)));
@@ -416,7 +417,7 @@ impl Interp {
         if id >= B_S_LEN && id <= B_S_GSUB {
             return self.builtin_string(id, &args);
         };
-        if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
+        if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_PKG_SEARCHPATH || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
             return self.builtin_aux(id, &args);
         };
         if id == B_GC {

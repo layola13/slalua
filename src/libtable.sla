@@ -6,6 +6,7 @@
 @import "src/interp_core.sla"
 @import "src/interp_expr.sla"
 @import "sa_std/fs.sai"
+@import "src/libfs.sai"
 @import "sa_std/fs.sa"
 @import "sa_std/fmt.sai"
 @import "src/lexer.sla"
@@ -28,6 +29,9 @@ impl Interp {
         };
         if id == B_REQUIRE {
             return self.bi_require(args);
+        };
+        if id == B_PKG_SEARCHPATH {
+            return self.bi_searchpath(args);
         };
         if id == B_CORO_RUNNING {
             let r = Vec::new();
@@ -435,10 +439,115 @@ impl Interp {
         self.sort_range(tid, i, hi, cmp);
     }
 
+    fn bi_searchpath(&self, args: &Vec<Value>) -> Vec<Value> {
+        let name = v_to_string(bs_arg(args, 0));
+        let path = v_to_string(bs_arg(args, 1));
+        let sep = s_from(STR_PTR("."), 1);
+        if len(args) > 2 {
+            sep = v_to_string(args[2]);
+        };
+        let dirsep = s_from(STR_PTR("/"), 1);
+        if len(args) > 3 {
+            dirsep = v_to_string(args[3]);
+        };
+        let nm = name;
+        if s_len(sep) > 0 {
+            if self.s_index_of(nm, sep) >= 0 {
+                nm = self.s_replace_all(nm, sep, dirsep);
+            };
+        };
+        let expanded = self.s_replace_all(path, s_from(STR_PTR("?"), 1), nm);
+        let parts = self.s_split(expanded, s_from(STR_PTR(";"), 1));
+        let i = 0;
+        while i < (len(parts) as i64) {
+            let f = parts[i].s;
+            let fp = sa_fmt_buffer_data(f);
+            let fl = s_len(f);
+            if sa_std_fs_exists(fp, fl) == 0 {
+                let r = Vec::new();
+                r.push(v_str(f));
+                return r;
+            };
+            i = i + 1;
+        }
+        let msg = bs_str(STR_PTR("no file '"), 9);
+        let j = 0;
+        while j < (len(parts) as i64) {
+            if j > 0 {
+                msg = s_cat(msg, s_from(STR_PTR("'\n\tno file '"), 12));
+            };
+            msg = s_cat(msg, parts[j].s);
+            j = j + 1;
+        }
+        msg = s_cat(msg, s_from(STR_PTR("'"), 1));
+        let r = Vec::new();
+        r.push(v_nil());
+        r.push(v_str(msg));
+        return r;
+    }
+
+    fn require_paths(&self, pkgid: i64, name: u64, which: u64) -> Vec<Value> {
+        let path = self.table_get_str(pkgid, which);
+        if path.tag != VT_STR {
+            let m1 = s_from(STR_PTR("'package."), 9);
+            let m2 = s_cat(m1, which);
+            let m3 = s_cat(m2, s_from(STR_PTR("' must be a string"), 18));
+            self.fail_text(m3);
+            return Vec::new();
+        };
+        let nm = self.s_replace_all(name, s_from(STR_PTR("."), 1), s_from(STR_PTR("/"), 1));
+        let expanded = self.s_replace_all(path.s, s_from(STR_PTR("?"), 1), nm);
+        return self.s_split(expanded, s_from(STR_PTR(";"), 1));
+    }
+
+    fn load_module(&self, file: u64, name: u64) -> Value {
+        let p: ptr = sa_fmt_buffer_data(file);
+        let pl = s_len(file);
+        let buf = sa_fs_read_file(p, pl, 8388608);
+        if buf == 0 {
+            self.fail_text(s_from(STR_PTR("module not found"), 16));
+            return v_nil();
+        };
+        let dp: ptr = sa_fs_read_buffer_data(buf);
+        let dl = sa_fs_read_buffer_len(buf);
+        let text = s_from(dp, dl);
+        let st = sa_fs_read_buffer_free(buf);
+        let lx = lex_source(text);
+        let pr = parse_tokens_base(lx, len(self.nodes) as i64, len(self.lists) as i64);
+        if pr.err != 0 {
+            self.fail_text(s_from(STR_PTR("syntax error in module"), 22));
+            return v_nil();
+        };
+        let i = 0;
+        while i < (len(pr.nodes) as i64) {
+            let nd = pr.nodes[i];
+            self.nodes.push(nd);
+            i = i + 1;
+        }
+        let j = 0;
+        while j < (len(pr.lists) as i64) {
+            let ls = pr.lists[j];
+            self.lists.push(ls);
+            j = j + 1;
+        }
+        let fid = self.new_func(Vec::new(), pr.root, 1, 0, -1);
+        let cargs = Vec::new();
+        cargs.push(v_str(name));
+        let out = self.call_value(v_func(fid), cargs);
+        let res = v_bool(true);
+        if len(out) > 0 {
+            if out[0].tag != VT_NIL {
+                res = out[0];
+            };
+        };
+        return res;
+    }
+
     fn bi_require(&self, args: &Vec<Value>) -> Vec<Value> {
         let name = bs_arg(args, 0);
         if name.tag != VT_STR {
-            return self.one_str(STR_PTR("bad argument to 'require'"), 25);
+            self.fail_str(STR_PTR("bad argument to 'require'"), 25);
+            return Vec::new();
         };
         let pkg = self.table_get_str(self.globals, istr(STR_PTR("package"), 7));
         let loaded = self.table_get_str(pkg.i, istr(STR_PTR("loaded"), 6));
@@ -467,55 +576,49 @@ impl Interp {
                 return pr;
             };
         };
-        let gv = self.table_get(self.globals, name);
-        if gv.tag == VT_TABLE {
-            self.table_set(loaded.i, v_str(name.s), gv);
-            let r = Vec::new();
-            r.push(gv);
-            return r;
-        };
-        let base = s_cat(istr(STR_PTR("../lua/testes/"), 14), s_cat(name.s, istr(STR_PTR(".lua"), 4)));
-        let pl = s_len(base);
-        let p: ptr = sa_fmt_buffer_data(base);
-        let buf = sa_fs_read_file(p, pl, 8388608);
-        if buf == 0 {
-            return self.one_str(STR_PTR("module not found"), 16);
-        };
-        let dp: ptr = sa_fs_read_buffer_data(buf);
-        let dl = sa_fs_read_buffer_len(buf);
-        let text = s_from(dp, dl);
-        let st = sa_fs_read_buffer_free(buf);
-        let lx = lex_source(text);
-        let pr = parse_tokens_base(lx, len(self.nodes) as i64, len(self.lists) as i64);
-        if pr.err != 0 {
-            return self.one_str(STR_PTR("syntax error in module"), 22);
+        let m1 = s_cat(s_from(STR_PTR("module '"), 8), name.s);
+        let m2 = s_cat(m1, s_from(STR_PTR("' not found:"), 12));
+        let m3 = s_cat(m2, s_from(STR_PTR("\n\tno field package.preload['"), 28));
+        let m4 = s_cat(m3, name.s);
+        let msg = s_cat(m4, s_from(STR_PTR("']"), 2));
+        let pfiles = self.require_paths(pkg.i, name.s, istr(STR_PTR("path"), 4));
+        if self.err != 0 {
+            return Vec::new();
         };
         let i = 0;
-        while i < (len(pr.nodes) as i64) {
-            let nd = pr.nodes[i];
-            self.nodes.push(nd);
+        while i < (len(pfiles) as i64) {
+            let f = pfiles[i].s;
+            let fp = sa_fmt_buffer_data(f);
+            let fl = s_len(f);
+            if sa_std_fs_exists(fp, fl) == 0 {
+                let r = self.load_module(f, name.s);
+                if r.tag == VT_NIL {
+                    return Vec::new();
+                };
+                self.table_set(loaded.i, v_str(name.s), r);
+                let rr = Vec::new();
+                rr.push(r);
+                return rr;
+            };
+            let n1 = s_cat(msg, s_from(STR_PTR("\n\tno file '"), 11));
+            let n2 = s_cat(n1, f);
+            msg = s_cat(n2, s_from(STR_PTR("'"), 1));
             i = i + 1;
         }
+        let cfiles = self.require_paths(pkg.i, name.s, istr(STR_PTR("cpath"), 5));
+        if self.err != 0 {
+            return Vec::new();
+        };
         let j = 0;
-        while j < (len(pr.lists) as i64) {
-            let ls = pr.lists[j];
-            self.lists.push(ls);
+        while j < (len(cfiles) as i64) {
+            let f = cfiles[j].s;
+            let n3 = s_cat(msg, s_from(STR_PTR("\n\tno file '"), 11));
+            let n4 = s_cat(n3, f);
+            msg = s_cat(n4, s_from(STR_PTR("'"), 1));
             j = j + 1;
         }
-        let fid = self.new_func(Vec::new(), pr.root, 1, 0, -1);
-        let cargs = Vec::new();
-        cargs.push(v_str(name.s));
-        let out = self.call_value(v_func(fid), cargs);
-        let res = v_bool(true);
-        if len(out) > 0 {
-            if out[0].tag != VT_NIL {
-                res = out[0];
-            };
-        };
-        self.table_set(loaded.i, v_str(name.s), res);
-        let r = Vec::new();
-        r.push(res);
-        return r;
+        self.fail_text(msg);
+        return Vec::new();
     }
 
     fn one_str(&self, msg: ptr, n: u64) -> Vec<Value> {
