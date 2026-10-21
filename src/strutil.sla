@@ -107,6 +107,29 @@ fn s_hex(v: u64) -> u64 {
     return sa_fmt_u64(v, 16);
 }
 
+fn s_utf8_esc(cp: i64) -> u64 {
+    if cp < 128 {
+        return s_char(cp as u8);
+    };
+    let out = bs_str(STR_PTR(""), 0);
+    let x = cp;
+    let mfb = 63;
+    let going = true;
+    while going {
+        out = s_cat(s_char((128 | (x & 63)) as u8), out);
+        x = x >> 6;
+        mfb = mfb >> 1;
+        if x > mfb {
+            going = true;
+        } else {
+            going = false;
+        };
+    }
+    let first = ((0 - mfb - 1) << 1) | x;
+    let b = first & 255;
+    return s_cat(s_char(b as u8), out);
+}
+
 fn s_is_digit(c: u8) -> bool {
     if c >= 48 && c <= 57 {
         return true;

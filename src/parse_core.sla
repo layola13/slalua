@@ -112,6 +112,18 @@ impl Parser {
         return false;
     }
 
+    fn cnames_remove(&self, name: u64) -> void {
+        let kept = Vec::new();
+        let i = 0;
+        while i < (len(self.cnames) as i64) {
+            if s_eq(self.cnames[i], name) == false {
+                kept.push(self.cnames[i]);
+            };
+            i = i + 1;
+        }
+        self.cnames = kept;
+    }
+
     fn is_vname(&self, s: u64) -> bool {
         let i = 0;
         while i < (len(self.vnames) as i64) {

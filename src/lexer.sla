@@ -299,11 +299,11 @@ impl Lexer {
                     v = v * 16 + dv;
                     digits = digits + 1;
                 }
-                if closed == false || digits == 0 || v > 1114111 {
+                if closed == false || digits == 0 || v > 2147483647 {
                     self.fail(line);
                     return out;
                 };
-                out = s_cat(out, utf8_encode(v));
+                out = s_cat(out, s_utf8_esc(v));
                 continue;
             };
             out = s_cat(out, s_char(e));

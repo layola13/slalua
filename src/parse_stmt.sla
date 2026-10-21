@@ -23,6 +23,7 @@ impl Parser {
 
     fn parse_block(&self) -> i64 {
         let lid = self.new_list();
+        let cnames_mark = len(self.cnames);
         let going = true;
         while going && self.err == 0 {
             let k = self.kind();
@@ -40,6 +41,9 @@ impl Parser {
             if st != 0 {
                 self.list_add(lid, st);
             };
+        }
+        while len(self.cnames) > cnames_mark {
+            let dropped = self.cnames.pop();
         }
         return lid;
     }
@@ -227,6 +231,8 @@ impl Parser {
             self.list_add(names, self.mk(NK_NAME, n.line, 0, 0, 0, 0, k, 0.0, n.s));
             if k == 1 {
                 self.cnames.push(n.s);
+            } else {
+                self.cnames_remove(n.s);
             };
             if self.accept(TK_COMMA) == false {
                 going = false;
