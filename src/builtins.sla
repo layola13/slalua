@@ -83,6 +83,14 @@ impl Interp {
         self.table_set_str(dbg, bs_str(STR_PTR("traceback"), 9), v_builtin(B_DBG_TRACE));
         self.table_set_str(self.globals, bs_str(STR_PTR("debug"), 5), v_table(dbg));
         let smeta = self.new_table();
+        self.table_set_str(smeta, bs_str(STR_PTR("__add"), 5), v_builtin(B_SM_ADD));
+        self.table_set_str(smeta, bs_str(STR_PTR("__sub"), 5), v_builtin(B_SM_SUB));
+        self.table_set_str(smeta, bs_str(STR_PTR("__mul"), 5), v_builtin(B_SM_MUL));
+        self.table_set_str(smeta, bs_str(STR_PTR("__mod"), 5), v_builtin(B_SM_MOD));
+        self.table_set_str(smeta, bs_str(STR_PTR("__pow"), 5), v_builtin(B_SM_POW));
+        self.table_set_str(smeta, bs_str(STR_PTR("__div"), 5), v_builtin(B_SM_DIV));
+        self.table_set_str(smeta, bs_str(STR_PTR("__idiv"), 6), v_builtin(B_SM_IDIV));
+        self.table_set_str(smeta, bs_str(STR_PTR("__unm"), 5), v_builtin(B_SM_UNM));
         self.table_set_str(self.globals, bs_str(STR_PTR("__strmeta"), 9), v_table(smeta));
         let pkg = self.new_table();
         let loaded = self.new_table();
@@ -432,6 +440,12 @@ impl Interp {
         if id == B_UTF8_CODES_NEXT {
             return self.utf8_codes_next(&args);
         };
+        if id == B_SM_ADD || id == B_SM_SUB || id == B_SM_MUL || id == B_SM_MOD || id == B_SM_POW || id == B_SM_DIV || id == B_SM_IDIV {
+            return self.sm_arith(id, &args);
+        };
+        if id == B_SM_UNM {
+            return self.sm_unm(&args);
+        };
         return Vec::new();
     }
 
@@ -475,6 +489,90 @@ impl Interp {
             return self.bi_tonumber(v);
         };
         return v;
+    }
+
+    fn sm_op_token(&self, id: i64) -> i64 {
+        if id == B_SM_ADD {
+            return TK_ADD;
+        };
+        if id == B_SM_SUB {
+            return TK_SUB;
+        };
+        if id == B_SM_MUL {
+            return TK_MUL;
+        };
+        if id == B_SM_MOD {
+            return TK_MOD;
+        };
+        if id == B_SM_POW {
+            return TK_POW;
+        };
+        if id == B_SM_DIV {
+            return TK_DIV;
+        };
+        if id == B_SM_IDIV {
+            return TK_IDIV;
+        };
+        return TK_SUB;
+    }
+
+    fn sm_op_name(&self, id: i64) -> u64 {
+        if id == B_SM_ADD {
+            return s_from(STR_PTR("add"), 3);
+        };
+        if id == B_SM_SUB {
+            return s_from(STR_PTR("sub"), 3);
+        };
+        if id == B_SM_MUL {
+            return s_from(STR_PTR("mul"), 3);
+        };
+        if id == B_SM_MOD {
+            return s_from(STR_PTR("mod"), 3);
+        };
+        if id == B_SM_POW {
+            return s_from(STR_PTR("pow"), 3);
+        };
+        if id == B_SM_DIV {
+            return s_from(STR_PTR("div"), 3);
+        };
+        if id == B_SM_IDIV {
+            return s_from(STR_PTR("idiv"), 4);
+        };
+        return s_from(STR_PTR("unm"), 3);
+    }
+
+    fn sm_arith(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
+        let a0 = bs_arg(args, 0);
+        let b0 = bs_arg(args, 1);
+        let t1 = v_type_name(a0);
+        let t2 = v_type_name(b0);
+        let a = self.v_coerce_num(a0);
+        let b = self.v_coerce_num(b0);
+        if v_is_number(a) == false || v_is_number(b) == false {
+            let m1 = s_cat(s_cat(s_from(STR_PTR("attempt to "), 11), self.sm_op_name(id)), s_from(STR_PTR(" a '"), 4));
+            let m2 = s_cat(s_cat(m1, t1), s_from(STR_PTR("' with a '"), 10));
+            let m3 = s_cat(m2, t2);
+            self.fail_text(s_cat(m3, s_from(STR_PTR("'"), 1)));
+            return Vec::new();
+        };
+        return bs_one(self.num_bin(self.sm_op_token(id), a, b));
+    }
+
+    fn sm_unm(&self, args: &Vec<Value>) -> Vec<Value> {
+        let a0 = bs_arg(args, 0);
+        let t1 = v_type_name(a0);
+        let a = self.v_coerce_num(a0);
+        if v_is_number(a) == false {
+            let m1 = s_cat(s_cat(s_from(STR_PTR("attempt to "), 11), self.sm_op_name(B_SM_UNM)), s_from(STR_PTR(" a '"), 4));
+            let m2 = s_cat(s_cat(m1, t1), s_from(STR_PTR("' with a '"), 10));
+            let m3 = s_cat(m2, t1);
+            self.fail_text(s_cat(m3, s_from(STR_PTR("'"), 1)));
+            return Vec::new();
+        };
+        if a.tag == VT_INT {
+            return bs_one(v_int(0 - a.i));
+        };
+        return bs_one(v_num(0.0 - a.f));
     }
 
     fn bi_tonumber(&self, v: Value) -> Value {
