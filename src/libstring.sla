@@ -6,6 +6,7 @@
 @import "src/interp_expr.sla"
 @import "src/opcodes.sla"
 @import "src/libutil.sla"
+@import "src/patstr.sla"
 
 impl Interp {
     fn builtin_string(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
@@ -86,38 +87,13 @@ impl Interp {
             return bs_one(v_int(8));
         };
         if id == B_S_FIND {
-            let str = v_to_string(bs_arg(args, 0));
-            let pat = v_to_string(bs_arg(args, 1));
-            let n = s_len(str) as i64;
-            let m = s_len(pat) as i64;
-            let init = 1;
-            if len(args) > 2 {
-                init = self.bi_int(bs_arg(args, 2), 1);
-            };
-            if init < 0 {
-                init = n + init + 1;
-            };
-            if init < 1 {
-                init = 1;
-            };
-            if m == 0 {
-                let r = Vec::new();
-                r.push(v_int(init));
-                r.push(v_int(init - 1));
-                return r;
-            };
-            let i = init - 1;
-            while i + m <= n {
-                let piece = s_slice(str, i as u64, m as u64);
-                if s_eq(piece, pat) {
-                    let r = Vec::new();
-                    r.push(v_int(i + 1));
-                    r.push(v_int(i + m));
-                    return r;
-                };
-                i = i + 1;
-            }
-            return bs_one(v_nil());
+            return self.pat_find_aux(true, args);
+        };
+        if id == B_S_MATCH {
+            return self.pat_find_aux(false, args);
+        };
+        if id == B_S_GSUB {
+            return self.pat_gsub(args);
         };
         if id == B_S_FORMAT {
             return bs_one(v_str(self.bi_format(args)));
@@ -192,5 +168,245 @@ impl Interp {
             }
         }
         return out;
+    }
+
+    fn pat_posrelat(&self, pos: i64, len: i64) -> i64 {
+        if pos >= 0 {
+            return pos;
+        };
+        if 0 - pos > len {
+            return 0;
+        };
+        return len + pos + 1;
+    }
+
+    fn pat_find_aux(&self, find: bool, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let p = v_to_string(bs_arg(args, 1));
+        let ls = s_len(s) as i64;
+        let lp = s_len(p) as i64;
+        let init = 1;
+        if len(args) > 2 {
+            init = self.bi_int(bs_arg(args, 2), 1);
+        };
+        let pos = self.pat_posrelat(init, ls);
+        if pos < 1 {
+            return bs_one(v_nil());
+        };
+        let init0 = pos - 1;
+        if init0 > ls {
+            return bs_one(v_nil());
+        };
+        let plain = false;
+        if len(args) > 3 {
+            plain = v_truthy(bs_arg(args, 3));
+        };
+        let st = pat_state_new(s, p);
+        if find && (plain || pat_nospecials(&st)) {
+            let idx = pat_plain_find(&st, init0);
+            if idx >= 0 {
+                let r = Vec::new();
+                r.push(v_int(idx + 1));
+                r.push(v_int(idx + lp));
+                return r;
+            };
+            return bs_one(v_nil());
+        };
+        if pat_search(&st, init0) == 0 {
+            return bs_one(v_nil());
+        };
+        if st.err != 0 {
+            self.fail_str(STR_PTR("malformed pattern"), 16);
+            return Vec::new();
+        };
+        if find {
+            let r = Vec::new();
+            r.push(v_int(st.mstart + 1));
+            r.push(v_int(st.mend));
+            let caps = pat_push_captures(&st, st.mstart, st.mend, false);
+            let i = 0;
+            while i < (len(caps) as i64) {
+                r.push(caps[i]);
+                i = i + 1;
+            }
+            return r;
+        };
+        return pat_push_captures(&st, st.mstart, st.mend, true);
+    }
+
+    fn pat_add_s(&self, st: &PatState, repl: u64, s: i64, e: i64) -> Vec<Value> {
+        let buf = Vec::new();
+        let rl = s_len(repl);
+        let i = 0;
+        while i < rl {
+            let c = s_byte(repl, i as u64);
+            if c != 37 {
+                let start = i;
+                let j = i;
+                while j < rl {
+                    if s_byte(repl, j as u64) == 37 {
+                        break;
+                    };
+                    j = j + 1;
+                }
+                buf.push(v_str(s_slice(repl, start as u64, (j - start) as u64)));
+                i = pat_assign(i, j);
+                continue;
+            };
+            let k = i + 1;
+            if k >= rl {
+                self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 39);
+                return buf;
+            };
+            let d = s_byte(repl, k as u64);
+            if d == 37 {
+                buf.push(v_str(bs_str(STR_PTR("%"), 1)));
+            } else {
+                if d == 48 {
+                    buf.push(v_str(s_slice(st.src, s as u64, (e - s) as u64)));
+                } else {
+                    if d >= 49 && d <= 57 {
+                        let cap = pat_one_capture(st, (d as i64) - 49, s, e);
+                        if cap.tag == VT_INT {
+                            buf.push(v_str(s_i64(cap.i)));
+                        } else {
+                            buf.push(v_str(cap.s));
+                        };
+                    } else {
+                        self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 39);
+                        return buf;
+                    };
+                };
+            };
+            i = pat_assign(i, k + 1);
+        }
+        return buf;
+    }
+
+    fn pat_push_value(&self, v: Value) -> Vec<Value> {
+        let buf = Vec::new();
+        if v.tag == VT_STR {
+            buf.push(v_str(v.s));
+            return buf;
+        };
+        if v.tag == VT_INT {
+            buf.push(v_str(s_i64(v.i)));
+            return buf;
+        };
+        if v.tag == VT_NUM {
+            buf.push(v_str(s_f64(v.f)));
+            return buf;
+        };
+        self.fail_str(STR_PTR("invalid replacement value"), 26);
+        return buf;
+    }
+
+    fn pat_add_value(&self, st: &PatState, repl: Value, s: i64, e: i64) -> (Vec<Value>, bool) {
+        if repl.tag == VT_FUNC || repl.tag == VT_BUILTIN {
+            let caps = pat_push_captures(st, s, e, true);
+            let out = self.call_value(repl, caps);
+            let v = v_nil();
+            if len(out) > 0 {
+                v = out[0];
+            };
+            if v_truthy(v) == false {
+                let keep = Vec::new();
+                keep.push(v_str(s_slice(st.src, s as u64, (e - s) as u64)));
+                return (keep, false);
+            };
+            return (self.pat_push_value(v), true);
+        };
+        if repl.tag == VT_TABLE {
+            let cap0 = pat_one_capture(st, 0, s, e);
+            let v = self.get_index(repl, cap0);
+            if v_truthy(v) == false {
+                let keep = Vec::new();
+                keep.push(v_str(s_slice(st.src, s as u64, (e - s) as u64)));
+                return (keep, false);
+            };
+            return (self.pat_push_value(v), true);
+        };
+        let rs = v_to_string(repl);
+        return (self.pat_add_s(st, rs, s, e), true);
+    }
+
+    fn pat_gsub(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let p = v_to_string(bs_arg(args, 1));
+        let repl = bs_arg(args, 2);
+        let ls = s_len(s) as i64;
+        let lp = s_len(p) as i64;
+        let max_s = ls + 1;
+        if len(args) > 3 {
+            max_s = self.bi_int(bs_arg(args, 3), ls + 1);
+        };
+        let anchor = false;
+        let pat_start = 0;
+        if lp > 0 {
+            if s_byte(p, 0) == 94 {
+                anchor = true;
+                pat_start = 1;
+            };
+        };
+        let st = pat_state_new(s, p);
+        let pieces = Vec::new();
+        let src = 0;
+        let copied = 0;
+        let lastmatch = -1;
+        let n = 0;
+        let changed = false;
+        let going = true;
+        while going && n < max_s {
+            st.level = 0;
+            st.depth = PAT_MAXCCALLS;
+            let e = pat_match(&st, src, pat_start);
+            if e >= 0 && e != lastmatch {
+                n = n + 1;
+                if src > copied {
+                    pieces.push(v_str(s_slice(s, copied as u64, (src - copied) as u64)));
+                };
+                let (adds, c) = self.pat_add_value(&st, repl, src, e);
+                let ai = 0;
+                while ai < (len(adds) as i64) {
+                    pieces.push(adds[ai]);
+                    ai = ai + 1;
+                }
+                if c {
+                    changed = true;
+                };
+                src = e;
+                copied = e;
+                lastmatch = e;
+            } else {
+                if src < ls {
+                    pieces.push(v_str(s_slice(s, src as u64, 1)));
+                    src = src + 1;
+                    copied = src;
+                } else {
+                    going = false;
+                    continue;
+                };
+            };
+            if anchor {
+                going = false;
+            };
+        }
+        if ls > copied {
+            pieces.push(v_str(s_slice(s, copied as u64, (ls - copied) as u64)));
+        };
+        let r = Vec::new();
+        if changed == false {
+            r.push(v_str(s));
+        } else {
+            let out = bs_str(STR_PTR(""), 0);
+            let i = 0;
+            while i < (len(pieces) as i64) {
+                out = s_cat(out, pieces[i].s);
+                i = i + 1;
+            }
+            r.push(v_str(out));
+        };
+        r.push(v_int(n));
+        return r;
     }
 }

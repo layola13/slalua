@@ -63,6 +63,29 @@ impl Interp {
         };
         if id == B_T_CREATE {
             let t = self.new_table();
+            let narr = 0;
+            let nrec = 0;
+            if len(args) > 0 {
+                narr = self.bi_int(bs_arg(args, 0), 0);
+            };
+            if len(args) > 1 {
+                nrec = self.bi_int(bs_arg(args, 1), 0);
+            };
+            if narr < 0 || narr > 2147483647 {
+                self.fail_str(STR_PTR("bad argument #1 to 'create' (out of range)"), 44);
+                return Vec::new();
+            };
+            if nrec < 0 || nrec > 2147483647 {
+                self.fail_str(STR_PTR("bad argument #2 to 'create' (out of range)"), 44);
+                return Vec::new();
+            };
+            if narr + nrec > 2147483647 {
+                self.fail_str(STR_PTR("table overflow"), 13);
+                return Vec::new();
+            };
+            if narr + nrec > 0 {
+                self.mem_used = self.mem_used + (narr + nrec) * 24;
+            };
             return bs_one(v_table(t));
         };
         if id == B_T_INSERT {
@@ -97,6 +120,22 @@ impl Interp {
             }
             self.table_set(t.i, v_int(n), v_nil());
             return bs_one(v);
+        };
+        if id == B_T_SORT {
+            let t = bs_arg(args, 0);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument #1 to 'sort' (table expected)"), 43);
+                return Vec::new();
+            };
+            let cmp = v_nil();
+            if len(args) > 1 {
+                cmp = args[1];
+            };
+            let n = self.table_len(t.i);
+            if n > 1 {
+                self.sort_range(t.i, 1, n, cmp);
+            };
+            return Vec::new();
         };
         if id == B_T_CONCAT {
             let t = bs_arg(args, 0);
@@ -298,6 +337,89 @@ impl Interp {
         let r = Vec::new();
         r.push(v_table(t));
         return r;
+    }
+
+    fn sort_lt(&self, a: Value, b: Value, cmp: Value) -> bool {
+        if cmp.tag == VT_FUNC || cmp.tag == VT_BUILTIN {
+            let cargs = Vec::new();
+            cargs.push(a);
+            cargs.push(b);
+            let out = self.call_value(cmp, cargs);
+            if len(out) > 0 {
+                return v_truthy(out[0]);
+            };
+            return false;
+        };
+        return v_lt(&a, &b);
+    }
+
+    fn sort_swap(&self, tid: i64, i: i64, j: i64) -> void {
+        let vi = self.table_get(tid, v_int(i));
+        let vj = self.table_get(tid, v_int(j));
+        self.table_set(tid, v_int(i), vj);
+        self.table_set(tid, v_int(j), vi);
+    }
+
+    fn sort_range(&self, tid: i64, lo: i64, hi: i64, cmp: Value) -> void {
+        if lo >= hi {
+            return;
+        };
+        if hi - lo < 12 {
+            let i = lo + 1;
+            while i <= hi {
+                let key = self.table_get(tid, v_int(i));
+                let j = i - 1;
+                while j >= lo {
+                    let cur = self.table_get(tid, v_int(j));
+                    if self.sort_lt(key, cur, cmp) == false {
+                        break;
+                    };
+                    self.sort_swap(tid, j + 1, j);
+                    j = j - 1;
+                }
+                self.table_set(tid, v_int(j + 1), key);
+                i = i + 1;
+            }
+            return;
+        };
+        let mid = (lo + hi) / 2;
+        let vmid = self.table_get(tid, v_int(mid));
+        let vlo = self.table_get(tid, v_int(lo));
+        if self.sort_lt(vmid, vlo, cmp) {
+            self.sort_swap(tid, mid, lo);
+        };
+        let vhi = self.table_get(tid, v_int(hi));
+        let vmid2 = self.table_get(tid, v_int(mid));
+        if self.sort_lt(vhi, vmid2, cmp) {
+            self.sort_swap(tid, hi, mid);
+        };
+        let vmid3 = self.table_get(tid, v_int(mid));
+        let vlo2 = self.table_get(tid, v_int(lo));
+        if self.sort_lt(vmid3, vlo2, cmp) {
+            self.sort_swap(tid, mid, lo);
+        };
+        let pivot = self.table_get(tid, v_int(lo));
+        let i = lo;
+        let j = hi;
+        while i <= j {
+            let vi = self.table_get(tid, v_int(i));
+            while self.sort_lt(vi, pivot, cmp) {
+                i = i + 1;
+                vi = self.table_get(tid, v_int(i));
+            }
+            let vj = self.table_get(tid, v_int(j));
+            while self.sort_lt(pivot, vj, cmp) {
+                j = j - 1;
+                vj = self.table_get(tid, v_int(j));
+            }
+            if i <= j {
+                self.sort_swap(tid, i, j);
+                i = i + 1;
+                j = j - 1;
+            }
+        }
+        self.sort_range(tid, lo, j, cmp);
+        self.sort_range(tid, i, hi, cmp);
     }
 
     fn bi_require(&self, args: &Vec<Value>) -> Vec<Value> {

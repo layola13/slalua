@@ -122,6 +122,21 @@ fn v_equal(a: &Value, b: &Value) -> bool {
     return a.f == b.f;
 }
 
+fn v_lt(a: &Value, b: &Value) -> bool {
+    if a.tag == VT_INT && b.tag == VT_INT {
+        return a.i < b.i;
+    };
+    if (a.tag == VT_INT || a.tag == VT_NUM) && (b.tag == VT_INT || b.tag == VT_NUM) {
+        let x = v_as_num(*a);
+        let y = v_as_num(*b);
+        return x < y;
+    };
+    if a.tag == VT_STR && b.tag == VT_STR {
+        return s_cmp(a.s, b.s) < 0;
+    };
+    return false;
+}
+
 fn mix64(x: u64) -> u64 {
     let z = x;
     z = z ^ (z >> 33);

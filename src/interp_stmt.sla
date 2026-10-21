@@ -126,6 +126,12 @@ impl Interp {
         };
         if nd.kind == NK_GLOBAL_FUNC {
             let f = self.eval(env, nd.a);
+            let old = self.table_get(self.globals, v_str(nd.s));
+            if old.tag != VT_NIL {
+                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nd.s, s_from(STR_PTR("' already defined"), 16)));
+                self.fail_text(m);
+                return;
+            };
             self.table_set(self.globals, v_str(nd.s), f);
             return;
         };
@@ -151,6 +157,9 @@ impl Interp {
         if self.list_len(nd.a) == 0 {
             return;
         };
+        if self.list_len(nd.b) == 0 {
+            return;
+        };
         let vals = self.eval_list(env, nd.b);
         let n = self.list_len(nd.a);
         let i = 0;
@@ -161,7 +170,13 @@ impl Interp {
             if i < (len(vals) as i64) {
                 v = vals[i];
             };
-            self.env_define(env, nn.s, v, nn.n);
+            let old = self.table_get(self.globals, v_str(nn.s));
+            if old.tag != VT_NIL {
+                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nn.s, s_from(STR_PTR("' already defined"), 16)));
+                self.fail_text(m);
+                return;
+            };
+            self.table_set(self.globals, v_str(nn.s), v);
             i = i + 1;
         }
     }

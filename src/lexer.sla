@@ -33,6 +33,19 @@ fn lx_hex_val(c: u8) -> i64 {
     return ((c - 65) + 10) as i64;
 }
 
+fn lx_hex_digit(c: u8) -> i64 {
+    if c >= 48 && c <= 57 {
+        return (c - 48) as i64;
+    };
+    if c >= 97 && c <= 102 {
+        return ((c - 97) + 10) as i64;
+    };
+    if c >= 65 && c <= 70 {
+        return ((c - 65) + 10) as i64;
+    };
+    return -1;
+}
+
 fn lx_is_alpha(c: u8) -> bool {
     if c >= 97 && c <= 122 {
         return true;
@@ -261,6 +274,36 @@ impl Lexer {
                 while self.pos < self.len && lx_is_space(self.peek(0)) {
                     self.take();
                 }
+                continue;
+            };
+            if e == 117 {
+                if self.take() != 123 {
+                    self.fail(line);
+                    return out;
+                };
+                let v: i64 = 0;
+                let digits = 0;
+                let closed = false;
+                while self.pos < self.len {
+                    let d = self.peek(0);
+                    if d == 125 {
+                        self.take();
+                        closed = true;
+                        break;
+                    };
+                    let dv = lx_hex_digit(self.take());
+                    if dv < 0 {
+                        self.fail(line);
+                        return out;
+                    };
+                    v = v * 16 + dv;
+                    digits = digits + 1;
+                }
+                if closed == false || digits == 0 || v > 1114111 {
+                    self.fail(line);
+                    return out;
+                };
+                out = s_cat(out, utf8_encode(v));
                 continue;
             };
             out = s_cat(out, s_char(e));

@@ -7,3 +7,5 @@
 @extern atan2(y: f64, x: f64) -> f64
 @extern log2(x: f64) -> f64
 @extern log10(x: f64) -> f64
+@extern memcmp(a: ptr, b: ptr, n: u64) -> i32
+@extern strcmp(a: ptr, b: ptr) -> i32

@@ -1,0 +1,161 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "sa_std/fmt.sai"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/pattern.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+fn pat_nospecials(st: &PatState) -> bool {
+    let i = 0;
+    while i < st.plen {
+        let c = s_byte(st.pat, i as u64);
+        if c == 94 || c == 36 || c == 42 || c == 43 || c == 63 || c == 46 {
+            return false;
+        };
+        if c == 40 || c == 91 || c == 37 || c == 45 {
+            return false;
+        };
+        i = i + 1;
+    }
+    return true;
+}
+
+fn pat_plain_find(st: &PatState, init: i64) -> i64 {
+    if st.plen == 0 {
+        return init;
+    };
+    if st.plen > st.slen - init {
+        return -1;
+    };
+    let i = init;
+    let limit = st.slen - st.plen;
+    while i <= limit {
+        let j = 0;
+        let same = true;
+        while j < st.plen {
+            if s_byte(st.src, (i + j) as u64) != s_byte(st.pat, j as u64) {
+                same = false;
+                break;
+            };
+            j = j + 1;
+        }
+        if same {
+            return i;
+        };
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn pat_one_capture(st: &PatState, i: i64, s: i64, e: i64) -> Value {
+    if i >= st.level {
+        if i != 0 {
+            st.err = 1;
+            return v_nil();
+        };
+        if e < s {
+            return v_str(bs_str(STR_PTR(""), 0));
+        };
+        return v_str(s_slice(st.src, s as u64, (e - s) as u64));
+    };
+    let capl = st.cap_len[i];
+    let init = st.cap_init[i];
+    if capl == -1 {
+        st.err = 1;
+        return v_nil();
+    };
+    if capl == -2 {
+        return v_int(init + 1);
+    };
+    if capl < 0 {
+        st.err = 1;
+        return v_nil();
+    };
+    return v_str(s_slice(st.src, init as u64, capl as u64));
+}
+
+fn pat_push_captures(st: &PatState, s: i64, e: i64, whole: bool) -> Vec<Value> {
+    let r = Vec::new();
+    let level = st.level;
+    let n = level;
+    if level == 0 && whole {
+        n = 1;
+    };
+    let i = 0;
+    while i < n {
+        r.push(pat_one_capture(st, i, s, e));
+        i = i + 1;
+    }
+    return r;
+}
+
+fn pat_search(st: &PatState, init: i64) -> i64 {
+    let anchor = false;
+    let pat_start = 0;
+    if st.plen > 0 {
+        if s_byte(st.pat, 0) == 94 {
+            anchor = true;
+            pat_start = 1;
+        };
+    };
+    let s1 = init;
+    let going = true;
+    let found = 0;
+    while going {
+        st.level = 0;
+        st.depth = PAT_MAXCCALLS;
+        let res = pat_match(st, s1, pat_start);
+        if res >= 0 {
+            st.mstart = s1;
+            st.mend = res;
+            found = 1;
+            going = false;
+            continue;
+        };
+        if anchor {
+            going = false;
+            continue;
+        };
+        if s1 >= st.slen {
+            going = false;
+            continue;
+        };
+        s1 = s1 + 1;
+    }
+    return found;
+}
+
+fn pat_search_from(st: &PatState, init: i64, last: i64) -> i64 {
+    let pat_start = 0;
+    if st.plen > 0 {
+        if s_byte(st.pat, 0) == 94 {
+            pat_start = 1;
+        };
+    };
+    let s1 = init;
+    let going = true;
+    let found = 0;
+    while going {
+        st.level = 0;
+        st.depth = PAT_MAXCCALLS;
+        let res = pat_match(st, s1, pat_start);
+        if res >= 0 {
+            if res != last {
+                st.mstart = s1;
+                st.mend = res;
+                found = 1;
+                going = false;
+                continue;
+            };
+        };
+        s1 = s1 + 1;
+        if s1 > st.slen {
+            going = false;
+            continue;
+        };
+    }
+    return found;
+}

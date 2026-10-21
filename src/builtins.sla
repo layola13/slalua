@@ -11,6 +11,7 @@
 @import "src/libutil.sla"
 @import "src/libstring.sla"
 @import "src/libtable.sla"
+@import "src/libutf8.sla"
 
 fn digit_val(c: u8) -> i64 {
     if c >= 48 && c <= 57 {
@@ -69,6 +70,14 @@ impl Interp {
         self.table_set_str(io, bs_str(STR_PTR("open"), 4), v_builtin(B_IO_UNSUPPORTED));
         self.table_set_str(io, bs_str(STR_PTR("close"), 5), v_builtin(B_IO_UNSUPPORTED));
         self.table_set_str(self.globals, bs_str(STR_PTR("io"), 2), v_table(io));
+        let ut = self.new_table();
+        self.table_set_str(ut, bs_str(STR_PTR("char"), 4), v_builtin(B_UTF8_CHAR));
+        self.table_set_str(ut, bs_str(STR_PTR("len"), 3), v_builtin(B_UTF8_LEN));
+        self.table_set_str(ut, bs_str(STR_PTR("codepoint"), 9), v_builtin(B_UTF8_CODEPOINT));
+        self.table_set_str(ut, bs_str(STR_PTR("offset"), 6), v_builtin(B_UTF8_OFFSET));
+        self.table_set_str(ut, bs_str(STR_PTR("codes"), 5), v_builtin(B_UTF8_CODES));
+        self.table_set_str(ut, bs_str(STR_PTR("charpattern"), 11), v_str(utf8_charpattern()));
+        self.table_set_str(self.globals, bs_str(STR_PTR("utf8"), 4), v_table(ut));
         let dbg = self.new_table();
         self.table_set_str(dbg, bs_str(STR_PTR("getinfo"), 7), v_builtin(B_DBG_INFO));
         self.table_set_str(dbg, bs_str(STR_PTR("traceback"), 9), v_builtin(B_DBG_TRACE));
@@ -81,6 +90,8 @@ impl Interp {
         self.table_set_str(pkg, bs_str(STR_PTR("loaded"), 6), v_table(loaded));
         self.table_set_str(pkg, bs_str(STR_PTR("preload"), 7), v_table(preload));
         self.table_set_str(pkg, bs_str(STR_PTR("path"), 4), v_str(bs_str(STR_PTR("../lua/testes/?.lua"), 21)));
+        self.table_set_str(pkg, bs_str(STR_PTR("cpath"), 5), v_str(bs_str(STR_PTR(""), 0)));
+        self.table_set_str(pkg, bs_str(STR_PTR("config"), 6), v_str(bs_str(STR_PTR("/\n;\n?\n!\n-\n"), 10)));
         self.table_set_str(self.globals, bs_str(STR_PTR("package"), 7), v_table(pkg));
         self.table_set_str(self.globals, bs_str(STR_PTR("_G"), 2), v_table(self.globals));
         self.table_set_str(self.globals, bs_str(STR_PTR("_ENV"), 4), v_table(self.globals));
@@ -97,6 +108,9 @@ impl Interp {
         self.table_set_str(st, bs_str(STR_PTR("format"), 6), v_builtin(B_S_FORMAT));
         self.table_set_str(st, bs_str(STR_PTR("packsize"), 8), v_builtin(B_S_PACKSIZE));
         self.table_set_str(st, bs_str(STR_PTR("find"), 4), v_builtin(B_S_FIND));
+        self.table_set_str(st, bs_str(STR_PTR("match"), 5), v_builtin(B_S_MATCH));
+        self.table_set_str(st, bs_str(STR_PTR("gmatch"), 6), v_builtin(B_S_GMATCH));
+        self.table_set_str(st, bs_str(STR_PTR("gsub"), 4), v_builtin(B_S_GSUB));
         self.table_set_str(self.globals, bs_str(STR_PTR("string"), 6), v_table(st));
         let tt = self.new_table();
         self.table_set_str(tt, bs_str(STR_PTR("insert"), 6), v_builtin(B_T_INSERT));
@@ -105,6 +119,7 @@ impl Interp {
         self.table_set_str(tt, bs_str(STR_PTR("pack"), 4), v_builtin(B_T_PACK));
         self.table_set_str(tt, bs_str(STR_PTR("unpack"), 6), v_builtin(B_T_UNPACK));
         self.table_set_str(tt, bs_str(STR_PTR("create"), 6), v_builtin(B_T_CREATE));
+        self.table_set_str(tt, bs_str(STR_PTR("sort"), 4), v_builtin(B_T_SORT));
         self.table_set_str(self.globals, bs_str(STR_PTR("table"), 5), v_table(tt));
         let mt = self.new_table();
         self.table_set_str(mt, bs_str(STR_PTR("floor"), 5), v_builtin(B_M_FLOOR));
@@ -147,6 +162,7 @@ impl Interp {
         self.table_set_str(loaded, bs_str(STR_PTR("debug"), 5), v_table(dbg));
         self.table_set_str(loaded, bs_str(STR_PTR("coroutine"), 9), v_table(co));
         self.table_set_str(loaded, bs_str(STR_PTR("io"), 2), v_table(io));
+        self.table_set_str(loaded, bs_str(STR_PTR("utf8"), 4), v_table(ut));
     }
 
     fn builtin_call(&self, id: i64, args: Vec<Value>) -> Vec<Value> {
@@ -163,6 +179,10 @@ impl Interp {
             return Vec::new();
         };
         if id == B_TYPE {
+            if len(args) < 1 {
+                self.fail_str(STR_PTR("bad argument #1 to 'type' (value expected)"), 44);
+                return Vec::new();
+            };
             return bs_one(v_str(v_type_name(bs_arg(&args, 0))));
         };
         if id == B_TOSTRING {
@@ -183,7 +203,9 @@ impl Interp {
             if len(args) > 1 {
                 m = bs_arg(&args, 1);
             };
-            self.err = v_to_string(m);
+            if self.err == 0 {
+                self.err = v_to_string(m);
+            };
             self.ctrl = CTL_ERROR;
             return Vec::new();
         };
@@ -374,14 +396,41 @@ impl Interp {
             };
             return bs_one(t);
         };
-        if id >= B_S_LEN && id <= B_S_FIND {
+        if id >= B_S_LEN && id <= B_S_GSUB {
             return self.builtin_string(id, &args);
         };
-        if (id >= B_T_INSERT && id <= B_T_CREATE) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
+        if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
             return self.builtin_aux(id, &args);
         };
         if id == B_GC {
+            if len(args) > 0 {
+                let a = args[0];
+                if a.tag == VT_STR {
+                    let opt = s_from(STR_PTR("count"), 5);
+                    if s_eq(a.s, opt) {
+                        return bs_one(v_num((self.mem_used as f64) / 1024.0));
+                    };
+                };
+            };
             return bs_one(v_int(0));
+        };
+        if id == B_UTF8_CHAR {
+            return self.utf8_char(&args);
+        };
+        if id == B_UTF8_LEN {
+            return self.utf8_len(&args);
+        };
+        if id == B_UTF8_CODEPOINT {
+            return self.utf8_codepoint(&args);
+        };
+        if id == B_UTF8_OFFSET {
+            return self.utf8_offset(&args);
+        };
+        if id == B_UTF8_CODES {
+            return self.utf8_codes(&args);
+        };
+        if id == B_UTF8_CODES_NEXT {
+            return self.utf8_codes_next(&args);
         };
         return Vec::new();
     }

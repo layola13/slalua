@@ -1,0 +1,588 @@
+@import "sa_std/vec.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+const PAT_MAXCAP: i64 = 32;
+const PAT_MAXCCALLS: i64 = 200;
+
+struct PatState {
+    src: u64,
+    slen: i64,
+    pat: u64,
+    plen: i64,
+    level: i64,
+    depth: i64,
+    mstart: i64,
+    mend: i64,
+    err: i64,
+    cap_init: Vec<i64>,
+    cap_len: Vec<i64>,
+}
+
+fn pat_state_new(src: u64, pat: u64) -> PatState {
+    return PatState {
+        src: src,
+        slen: s_len(src) as i64,
+        pat: pat,
+        plen: s_len(pat) as i64,
+        level: 0,
+        depth: PAT_MAXCCALLS,
+        mstart: -1,
+        mend: -1,
+        err: 0,
+        cap_init: Vec::new(),
+        cap_len: Vec::new(),
+    };
+}
+
+fn pat_assign(x: i64, v: i64) -> i64 {
+    return x + (v - x);
+}
+
+fn pat_isalpha(c: u8) -> bool {
+    if c >= 65 && c <= 90 {
+        return true;
+    };
+    if c >= 97 && c <= 122 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_isdigit(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_isalnum(c: u8) -> bool {
+    if pat_isalpha(c) {
+        return true;
+    };
+    if pat_isdigit(c) {
+        return true;
+    };
+    return false;
+}
+
+fn pat_isupper(c: u8) -> bool {
+    if c >= 65 && c <= 90 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_islower(c: u8) -> bool {
+    if c >= 97 && c <= 122 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_isspace(c: u8) -> bool {
+    if c == 32 {
+        return true;
+    };
+    if c >= 9 && c <= 13 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_iscntrl(c: u8) -> bool {
+    if c < 32 {
+        return true;
+    };
+    if c == 127 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_isgraph(c: u8) -> bool {
+    if c > 32 && c < 127 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_ispunct(c: u8) -> bool {
+    if pat_isgraph(c) == false {
+        return false;
+    };
+    if pat_isalnum(c) {
+        return false;
+    };
+    return true;
+}
+
+fn pat_isxdigit(c: u8) -> bool {
+    if pat_isdigit(c) {
+        return true;
+    };
+    if c >= 97 && c <= 102 {
+        return true;
+    };
+    if c >= 65 && c <= 70 {
+        return true;
+    };
+    return false;
+}
+
+fn pat_negate(cl: u8, res: bool) -> bool {
+    if cl >= 65 && cl <= 90 {
+        return res == false;
+    };
+    return res;
+}
+
+fn pat_match_class(c: u8, cl: u8) -> bool {
+    let lower = cl;
+    if cl >= 65 && cl <= 90 {
+        lower = cl + 32;
+    };
+    if lower == 97 {
+        return pat_negate(cl, pat_isalpha(c));
+    };
+    if lower == 99 {
+        return pat_negate(cl, pat_iscntrl(c));
+    };
+    if lower == 100 {
+        return pat_negate(cl, pat_isdigit(c));
+    };
+    if lower == 103 {
+        return pat_negate(cl, pat_isgraph(c));
+    };
+    if lower == 108 {
+        return pat_negate(cl, pat_islower(c));
+    };
+    if lower == 112 {
+        return pat_negate(cl, pat_ispunct(c));
+    };
+    if lower == 115 {
+        return pat_negate(cl, pat_isspace(c));
+    };
+    if lower == 117 {
+        return pat_negate(cl, pat_isupper(c));
+    };
+    if lower == 119 {
+        return pat_negate(cl, pat_isalnum(c));
+    };
+    if lower == 120 {
+        return pat_negate(cl, pat_isxdigit(c));
+    };
+    if lower == 122 {
+        return pat_negate(cl, c == 0);
+    };
+    return cl == c;
+}
+
+fn pat_class_end(st: &PatState, p: i64) -> i64 {
+    if p >= st.plen {
+        return p;
+    };
+    let c = s_byte(st.pat, p as u64);
+    if c == 37 {
+        if p + 1 >= st.plen {
+            st.err = 1;
+            return p + 1;
+        };
+        return p + 2;
+    };
+    if c == 91 {
+        let q = p + 1;
+        if q < st.plen {
+            if s_byte(st.pat, q as u64) == 94 {
+                q = q + 1;
+            };
+        };
+        let going = true;
+        while going {
+            if q >= st.plen {
+                st.err = 1;
+                going = false;
+                continue;
+            };
+            let ch = s_byte(st.pat, q as u64);
+            q = q + 1;
+            if ch == 37 && q < st.plen {
+                q = q + 1;
+            };
+            if q < st.plen {
+                if s_byte(st.pat, q as u64) == 93 {
+                    return q + 1;
+                };
+            };
+        }
+    };
+    return p + 1;
+}
+
+fn pat_match_bracket(st: &PatState, c: u8, p: i64, ec: i64) -> bool {
+    let sig = true;
+    let q = p;
+    if q + 1 < st.plen {
+        if s_byte(st.pat, (q + 1) as u64) == 94 {
+            sig = false;
+            q = q + 1;
+        };
+    };
+    let going = true;
+    while going {
+        q = q + 1;
+        if q >= ec {
+            going = false;
+            continue;
+        };
+        let ch = s_byte(st.pat, q as u64);
+        if ch == 37 {
+            q = q + 1;
+            if q < st.plen {
+                let e = s_byte(st.pat, q as u64);
+                if pat_match_class(c, e) {
+                    return sig;
+                };
+            };
+        } else {
+            if q + 1 < ec && q + 2 < ec {
+                if s_byte(st.pat, (q + 1) as u64) == 45 {
+                    let lo = ch;
+                    let hi = s_byte(st.pat, (q + 2) as u64);
+                    if lo <= c && c <= hi {
+                        return sig;
+                    };
+                    q = q + 2;
+                } else {
+                    if ch == c {
+                        return sig;
+                    };
+                };
+            } else {
+                if ch == c {
+                    return sig;
+                };
+            };
+        };
+    }
+    return sig == false;
+}
+
+fn pat_single_match(st: &PatState, s: i64, p: i64, ep: i64) -> bool {
+    if s >= st.slen {
+        return false;
+    };
+    let c = s_byte(st.src, s as u64);
+    let pc = s_byte(st.pat, p as u64);
+    if pc == 46 {
+        return true;
+    };
+    if pc == 37 {
+        if p + 1 >= st.plen {
+            return false;
+        };
+        return pat_match_class(c, s_byte(st.pat, (p + 1) as u64));
+    };
+    if pc == 91 {
+        return pat_match_bracket(st, c, p, ep - 1);
+    };
+    return pc == c;
+}
+
+fn pat_capture_to_close(st: &PatState) -> i64 {
+    let level = st.level - 1;
+    while level >= 0 {
+        if st.cap_len[level] == -1 {
+            return level;
+        };
+        level = level - 1;
+    }
+    st.err = 1;
+    return -1;
+}
+
+fn pat_match_capture(st: &PatState, s: i64, l: i64) -> i64 {
+    if l < 0 || l >= st.level {
+        st.err = 1;
+        return -1;
+    };
+    let len = st.cap_len[l];
+    if len < 0 {
+        return -1;
+    };
+    let init = st.cap_init[l];
+    if (st.slen - s) < len {
+        return -1;
+    };
+    let i = 0;
+    let same = true;
+    while i < len {
+        if s_byte(st.src, (init + i) as u64) != s_byte(st.src, (s + i) as u64) {
+            same = false;
+            break;
+        };
+        i = i + 1;
+    }
+    if same == false {
+        return -1;
+    };
+    return s + len;
+}
+
+fn pat_max_expand(st: &PatState, s: i64, p: i64, ep: i64) -> i64 {
+    let i = 0;
+    while pat_single_match(st, s + i, p, ep) {
+        i = i + 1;
+    }
+    let going = true;
+    while going {
+        if i < 0 {
+            going = false;
+            continue;
+        };
+        let res = pat_match(st, s + i, ep + 1);
+        if res >= 0 {
+            return res;
+        };
+        i = i - 1;
+    }
+    return -1;
+}
+
+fn pat_min_expand(st: &PatState, s: i64, p: i64, ep: i64) -> i64 {
+    let cur = s;
+    let going = true;
+    let res: i64 = -1;
+    while going {
+        res = pat_match(st, cur, ep + 1);
+        if res >= 0 {
+            going = false;
+            continue;
+        };
+        if cur < st.slen && pat_single_match(st, cur, p, ep) {
+            cur = cur + 1;
+            continue;
+        };
+        going = false;
+    }
+    return res;
+}
+
+fn pat_match_balance(st: &PatState, s: i64, p: i64) -> i64 {
+    if p + 1 >= st.plen {
+        st.err = 1;
+        return -1;
+    };
+    if s >= st.slen {
+        return -1;
+    };
+    let b = s_byte(st.pat, p as u64);
+    let e = s_byte(st.pat, (p + 1) as u64);
+    if s_byte(st.src, s as u64) != b {
+        return -1;
+    };
+    let cont = 1;
+    let i = s + 1;
+    while i < st.slen {
+        let c = s_byte(st.src, i as u64);
+        if c == e {
+            cont = cont - 1;
+            if cont == 0 {
+                return i + 1;
+            };
+        } else {
+            if c == b {
+                cont = cont + 1;
+            };
+        };
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn pat_start_capture(st: &PatState, s: i64, p: i64, what: i64) -> i64 {
+    let level = st.level;
+    if level >= PAT_MAXCAP {
+        st.err = 1;
+        return -1;
+    };
+    if level >= (len(st.cap_init) as i64) {
+        st.cap_init.push(s);
+        st.cap_len.push(what);
+    } else {
+        st.cap_init[level] = s;
+        st.cap_len[level] = what;
+    };
+    st.level = level + 1;
+    let res = pat_match(st, s, p);
+    if res < 0 {
+        st.level = level;
+    };
+    return res;
+}
+
+fn pat_end_capture(st: &PatState, s: i64, p: i64) -> i64 {
+    let l = pat_capture_to_close(st);
+    if l < 0 {
+        return -1;
+    };
+    let init = st.cap_init[l];
+    st.cap_len[l] = s - init;
+    let res = pat_match(st, s, p);
+    if res < 0 {
+        st.cap_len[l] = -1;
+    };
+    return res;
+}
+
+fn pat_match(st: &PatState, s: i64, p: i64) -> i64 {
+    st.depth = st.depth - 1;
+    if st.depth <= 0 {
+        st.err = 1;
+        return -1;
+    };
+    let cur_s = s;
+    let cur_p = p;
+    let running = true;
+    while running {
+        if cur_p >= st.plen {
+            running = false;
+            continue;
+        };
+        let ch = s_byte(st.pat, cur_p as u64);
+        if ch == 40 {
+            let is_pos = false;
+            if cur_p + 1 < st.plen {
+                if s_byte(st.pat, (cur_p + 1) as u64) == 41 {
+                    is_pos = true;
+                };
+            };
+            let np = cur_p + 1;
+            let what = -1;
+            if is_pos {
+                np = cur_p + 2;
+                what = -2;
+            };
+            cur_s = pat_assign(cur_s, pat_start_capture(st, cur_s, np, what));
+            running = false;
+            continue;
+        };
+        if ch == 41 {
+            cur_s = pat_assign(cur_s, pat_end_capture(st, cur_s, cur_p + 1));
+            running = false;
+            continue;
+        };
+        if ch == 36 {
+            if cur_p + 1 == st.plen {
+                if cur_s != st.slen {
+                    cur_s = pat_assign(cur_s, -1);
+                };
+                running = false;
+                continue;
+            };
+        } else {
+            if ch == 37 {
+                let nx = 0;
+                if cur_p + 1 < st.plen {
+                    nx = s_byte(st.pat, (cur_p + 1) as u64) as i64;
+                };
+                if nx == 98 {
+                    let r = pat_match_balance(st, cur_s, cur_p + 2);
+                    if r >= 0 {
+                        cur_s = pat_assign(cur_s, r);
+                        cur_p = pat_assign(cur_p, cur_p + 4);
+                        continue;
+                    };
+                    cur_s = pat_assign(cur_s, -1);
+                    running = false;
+                    continue;
+                };
+                if nx == 102 {
+                    let np = cur_p + 2;
+                    if np >= st.plen || s_byte(st.pat, np as u64) != 91 {
+                        st.err = 1;
+                        cur_s = pat_assign(cur_s, -1);
+                        running = false;
+                        continue;
+                    };
+                    let ep = pat_class_end(st, np);
+                    let previous = 0;
+                    if cur_s > 0 {
+                        previous = s_byte(st.src, (cur_s - 1) as u64);
+                    };
+                    let cur = 0;
+                    if cur_s < st.slen {
+                        cur = s_byte(st.src, cur_s as u64);
+                    };
+                    let a = pat_match_bracket(st, previous, np, ep - 1);
+                    let b = pat_match_bracket(st, cur, np, ep - 1);
+                    if a == false && b {
+                        cur_p = pat_assign(cur_p, ep);
+                        continue;
+                    };
+                    cur_s = pat_assign(cur_s, -1);
+                    running = false;
+                    continue;
+                };
+                if nx >= 48 && nx <= 57 {
+                    let r = pat_match_capture(st, cur_s, nx - 49);
+                    if r >= 0 {
+                        cur_s = pat_assign(cur_s, r);
+                        cur_p = pat_assign(cur_p, cur_p + 2);
+                        continue;
+                    };
+                    cur_s = pat_assign(cur_s, -1);
+                    running = false;
+                    continue;
+                };
+            };
+        };
+        let ep = pat_class_end(st, cur_p);
+        let e = 0;
+        if ep < st.plen {
+            e = s_byte(st.pat, ep as u64);
+        };
+        if pat_single_match(st, cur_s, cur_p, ep) == false {
+            if e == 42 || e == 63 || e == 45 {
+                cur_p = pat_assign(cur_p, ep + 1);
+                continue;
+            };
+            cur_s = pat_assign(cur_s, -1);
+            running = false;
+            continue;
+        };
+        if e == 63 {
+            let res = pat_match(st, cur_s + 1, ep + 1);
+            if res >= 0 {
+                cur_s = pat_assign(cur_s, res);
+                running = false;
+                continue;
+            };
+            cur_p = pat_assign(cur_p, ep + 1);
+            continue;
+        };
+        if e == 43 {
+            cur_s = pat_assign(cur_s, cur_s + 1);
+            cur_s = pat_assign(cur_s, pat_max_expand(st, cur_s, cur_p, ep));
+            running = false;
+            continue;
+        };
+        if e == 42 {
+            cur_s = pat_assign(cur_s, pat_max_expand(st, cur_s, cur_p, ep));
+            running = false;
+            continue;
+        };
+        if e == 45 {
+            cur_s = pat_assign(cur_s, pat_min_expand(st, cur_s, cur_p, ep));
+            running = false;
+            continue;
+        };
+        cur_s = pat_assign(cur_s, cur_s + 1);
+        cur_p = pat_assign(cur_p, ep);
+    }
+    st.depth = st.depth + 1;
+    return cur_s;
+}

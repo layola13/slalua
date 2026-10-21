@@ -26,34 +26,6 @@ fn v_to_i64(v: Value) -> i64 {
     return v.f as i64;
 }
 
-fn s_cmp(a: u64, b: u64) -> i64 {
-    let an = s_len(a);
-    let bn = s_len(b);
-    let n = an;
-    if bn < n {
-        n = bn;
-    };
-    let i: u64 = 0;
-    while i < n {
-        let ca = s_byte(a, i);
-        let cb = s_byte(b, i);
-        if ca < cb {
-            return -1;
-        };
-        if ca > cb {
-            return 1;
-        };
-        i = i + 1;
-    }
-    if an < bn {
-        return -1;
-    };
-    if an > bn {
-        return 1;
-    };
-    return 0;
-}
-
 impl Interp {
     fn eval(&self, env: i64, id: i64) -> Value {
         let nd = self.nd(id);
@@ -288,10 +260,13 @@ impl Interp {
             if meta >= 0 {
                 let idx = self.table_get_str(meta, s_from(STR_PTR("__index"), 7));
                 if idx.tag == VT_TABLE {
-                    return self.table_get(idx.i, key);
+                    return self.get_index(idx, key);
                 };
                 if idx.tag == VT_FUNC || idx.tag == VT_BUILTIN {
-                    let out = self.call_value(idx, self.one_arg(obj, obj));
+                    let cargs = Vec::new();
+                    cargs.push(obj);
+                    cargs.push(key);
+                    let out = self.call_value(idx, cargs);
                     if len(out) > 0 {
                         return out[0];
                     };
@@ -312,6 +287,7 @@ impl Interp {
                 return self.table_get(sm.i, key);
             };
         };
+        self.fail_str(STR_PTR("attempt to index a non-table value"), 34);
         return v_nil();
     }
 
@@ -323,6 +299,25 @@ impl Interp {
 
     fn set_index(&self, obj: Value, key: Value, val: Value) -> void {
         if obj.tag == VT_TABLE {
+            let cur = self.table_get(obj.i, key);
+            if cur.tag == VT_NIL {
+                let meta = self.tables[obj.i].meta;
+                if meta >= 0 {
+                    let ni = self.table_get_str(meta, s_from(STR_PTR("__newindex"), 9));
+                    if ni.tag == VT_TABLE {
+                        self.set_index(ni, key, val);
+                        return;
+                    };
+                    if ni.tag == VT_FUNC || ni.tag == VT_BUILTIN {
+                        let cargs = Vec::new();
+                        cargs.push(obj);
+                        cargs.push(key);
+                        cargs.push(val);
+                        self.call_value(ni, cargs);
+                        return;
+                    };
+                };
+            };
             self.table_set(obj.i, key, val);
             return;
         };
@@ -359,16 +354,12 @@ impl Interp {
         };
         if op == TK_DIV {
             let d = v_as_num(b);
-            if d == 0.0 {
-                self.fail_str(STR_PTR("attempt to divide by zero"), 26);
-                return v_nil();
-            };
             return v_num(v_as_num(a) / d);
         };
         if op == TK_IDIV {
             if both {
                 if b.i == 0 {
-                    self.fail_str(STR_PTR("attempt to divide by zero"), 26);
+                    self.fail_str(STR_PTR("attempt to perform 'n//0'"), 25);
                     return v_nil();
                 };
                 let q = a.i / b.i;
@@ -380,7 +371,7 @@ impl Interp {
             };
             let d = v_as_num(b);
             if d == 0.0 {
-                self.fail_str(STR_PTR("attempt to divide by zero"), 26);
+                self.fail_str(STR_PTR("attempt to perform 'n//0'"), 25);
                 return v_nil();
             };
             return v_num(sa_math_floor(v_as_num(a) / d));
@@ -388,7 +379,7 @@ impl Interp {
         if op == TK_MOD {
             if both {
                 if b.i == 0 {
-                    self.fail_str(STR_PTR("attempt to perform modulo by zero"), 33);
+                    self.fail_str(STR_PTR("attempt to perform 'n%%0'"), 25);
                     return v_nil();
                 };
                 let r = a.i % b.i;
@@ -399,7 +390,7 @@ impl Interp {
             };
             let d = v_as_num(b);
             if d == 0.0 {
-                self.fail_str(STR_PTR("attempt to perform modulo by zero"), 33);
+                self.fail_str(STR_PTR("attempt to perform 'n%%0'"), 25);
                 return v_nil();
             };
             let r = v_as_num(a) - sa_math_floor(v_as_num(a) / d) * d;
@@ -533,6 +524,9 @@ impl Interp {
         };
         let a = self.eval(env, nd.a);
         let b = self.eval(env, nd.b);
+        if self.ctrl == CTL_ERROR {
+            return v_nil();
+        };
         if nd.n == TK_CONCAT {
             return v_str(s_cat(v_to_string(a), v_to_string(b)));
         };
@@ -638,12 +632,15 @@ impl Interp {
                 let t = self.new_table();
                 let j = ai;
                 let idx = 1;
+                let mem_before = self.mem_used;
                 while j < (len(args) as i64) {
                     self.table_set(t, v_int(idx), args[j]);
                     idx = idx + 1;
                     j = j + 1;
                 }
+                self.mem_used = mem_before;
                 self.table_set_str(t, s_from(STR_PTR("n"), 1), v_int(idx - 1));
+                self.mem_used = mem_before;
                 self.envs[env].vargname = pn.s;
                 self.env_define(env, pn.s, v_table(t), 0);
             } else {
@@ -664,7 +661,9 @@ impl Interp {
         self.envs[env].varargs = va;
         self.ctrl = CTL_NONE;
         self.retvals = Vec::new();
+        let saved_line = self.curline;
         self.exec_block(env, self.funcs[fid].body);
+        self.curline = saved_line;
         let out = self.take_returns();
         if self.ctrl == CTL_RETURN {
             self.ctrl = CTL_NONE;

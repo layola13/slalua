@@ -59,6 +59,7 @@ struct Interp {
     curline: i64,
     rng0: u64,
     rng1: u64,
+    mem_used: i64,
 }
 
 fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
@@ -102,6 +103,7 @@ fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
         curline: 0,
         rng0: 88172645463325252,
         rng1: 6364136223846793005,
+        mem_used: 0,
     };
     it.globals = it.new_table();
     return it;
@@ -374,6 +376,7 @@ impl Interp {
         };
         if val.tag != VT_NIL {
             self.t_insert(tid, key, val, h);
+            self.mem_used = self.mem_used + 24;
         };
     }
 
@@ -436,6 +439,13 @@ impl Interp {
     fn fail_str(&self, msg: ptr, n: u64) -> void {
         if self.err == 0 {
             self.err = s_from(msg, n);
+        };
+        self.ctrl = CTL_ERROR;
+    }
+
+    fn fail_text(&self, msg: u64) -> void {
+        if self.err == 0 {
+            self.err = msg;
         };
         self.ctrl = CTL_ERROR;
     }

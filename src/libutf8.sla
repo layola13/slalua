@@ -1,0 +1,347 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/pattern.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+const UTF8_MAXUNICODE: i64 = 1114111;
+
+fn utf8_iscont(c: i64) -> bool {
+    return (c & 192) == 128;
+}
+
+fn utf8_decode(s: u64, len: i64, pos: i64, strict: bool) -> (i64, i64) {
+    if pos < 0 || pos >= len {
+        return (-1, 0);
+    };
+    let c = s_byte(s, pos as u64) as i64;
+    if c < 128 {
+        return (pos + 1, c);
+    };
+    if c >= 254 {
+        return (-1, 0);
+    };
+    let count = 0;
+    let res = 0;
+    let cc = c;
+    while (cc & 64) != 0 {
+        count = count + 1;
+        if pos + count >= len {
+            return (-1, 0);
+        };
+        let nb = s_byte(s, (pos + count) as u64) as i64;
+        if utf8_iscont(nb) == false {
+            return (-1, 0);
+        };
+        res = (res << 6) | (nb & 63);
+        cc = cc << 1;
+    }
+    res = res | ((cc & 127) << (count * 5));
+    if count == 0 {
+        return (-1, 0);
+    };
+    if res > 2147483647 {
+        return (-1, 0);
+    };
+    if count == 1 && res < 128 {
+        return (-1, 0);
+    };
+    if count == 2 && res < 2048 {
+        return (-1, 0);
+    };
+    if count == 3 && res < 65536 {
+        return (-1, 0);
+    };
+    if count == 4 && res < 2097152 {
+        return (-1, 0);
+    };
+    if count == 5 && res < 67108864 {
+        return (-1, 0);
+    };
+    if strict {
+        if res > UTF8_MAXUNICODE {
+            return (-1, 0);
+        };
+        if res >= 55296 && res <= 57343 {
+            return (-1, 0);
+        };
+    };
+    return (pos + count + 1, res);
+}
+
+fn utf8_posrelat(pos: i64, len: i64) -> i64 {
+    if pos >= 0 {
+        return pos;
+    };
+    if 0 - pos > len {
+        return 0;
+    };
+    return len + pos + 1;
+}
+
+fn utf8_charpattern() -> u64 {
+    let cp = bs_str(STR_PTR(""), 0);
+    cp = s_cat(cp, s_char(91));
+    cp = s_cat(cp, s_char(0));
+    cp = s_cat(cp, s_char(45));
+    cp = s_cat(cp, s_char(127));
+    cp = s_cat(cp, s_char(194));
+    cp = s_cat(cp, s_char(45));
+    cp = s_cat(cp, s_char(253));
+    cp = s_cat(cp, s_char(93));
+    cp = s_cat(cp, s_char(91));
+    cp = s_cat(cp, s_char(128));
+    cp = s_cat(cp, s_char(45));
+    cp = s_cat(cp, s_char(191));
+    cp = s_cat(cp, s_char(93));
+    cp = s_cat(cp, s_char(42));
+    return cp;
+}
+
+impl Interp {
+    fn utf8_char(&self, args: &Vec<Value>) -> Vec<Value> {
+        let out = bs_str(STR_PTR(""), 0);
+        let i = 0;
+        while i < (len(args) as i64) {
+            let cp = self.bi_int(args[i], 0);
+            if cp < 0 || cp > UTF8_MAXUNICODE {
+                self.fail_str(STR_PTR("value out of range"), 19);
+                return Vec::new();
+            };
+            out = s_cat(out, utf8_encode(cp));
+            i = i + 1;
+        }
+        return bs_one(v_str(out));
+    }
+
+    fn utf8_len(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let len = s_len(s) as i64;
+        let mut_i = 1;
+        if len(args) > 1 {
+            mut_i = self.bi_int(bs_arg(args, 1), 1);
+        };
+        let mut_j = 0 - 1;
+        if len(args) > 2 {
+            mut_j = self.bi_int(bs_arg(args, 2), 0 - 1);
+        };
+        let lax = false;
+        if len(args) > 3 {
+            lax = v_truthy(bs_arg(args, 3));
+        };
+        let posi = utf8_posrelat(mut_i, len);
+        let pose = utf8_posrelat(mut_j, len);
+        if posi < 1 || (posi - 1) > len {
+            self.fail_str(STR_PTR("initial position out of bounds"), 30);
+            return Vec::new();
+        };
+        if (pose - 1) >= len {
+            self.fail_str(STR_PTR("final position out of bounds"), 28);
+            return Vec::new();
+        };
+        let i = posi - 1;
+        let j = pose - 1;
+        let n = 0;
+        let going = true;
+        while going {
+            if i > j {
+                going = false;
+                continue;
+            };
+            let (nxt, cp) = utf8_decode(s, len, i, lax == false);
+            if nxt < 0 {
+                let r = Vec::new();
+                r.push(v_nil());
+                r.push(v_int(i + 1));
+                return r;
+            };
+            i = nxt;
+            n = n + 1;
+        }
+        return bs_one(v_int(n));
+    }
+
+    fn utf8_codepoint(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let len = s_len(s) as i64;
+        let mut_i = 1;
+        if len(args) > 1 {
+            mut_i = self.bi_int(bs_arg(args, 1), 1);
+        };
+        let mut_j = mut_i;
+        if len(args) > 2 {
+            mut_j = self.bi_int(bs_arg(args, 2), mut_i);
+        };
+        let lax = false;
+        if len(args) > 3 {
+            lax = v_truthy(bs_arg(args, 3));
+        };
+        let posi = utf8_posrelat(mut_i, len);
+        let pose = utf8_posrelat(mut_j, len);
+        if posi < 1 {
+            self.fail_str(STR_PTR("out of bounds"), 13);
+            return Vec::new();
+        };
+        if pose > len {
+            self.fail_str(STR_PTR("out of bounds"), 13);
+            return Vec::new();
+        };
+        let r = Vec::new();
+        if posi > pose {
+            return r;
+        };
+        let i = posi - 1;
+        let j = pose - 1;
+        while i <= j {
+            let (nxt, cp) = utf8_decode(s, len, i, lax == false);
+            if nxt < 0 {
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                return Vec::new();
+            };
+            r.push(v_int(cp));
+            i = nxt;
+        }
+        return r;
+    }
+
+    fn utf8_offset(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let len = s_len(s) as i64;
+        let n = self.bi_int(bs_arg(args, 1), 0);
+        let mut_i = 1;
+        if n >= 0 {
+            mut_i = 1;
+        } else {
+            mut_i = len + 1;
+        };
+        if len(args) > 2 {
+            mut_i = self.bi_int(bs_arg(args, 2), mut_i);
+        };
+        let posi = utf8_posrelat(mut_i, len);
+        if posi < 1 || (posi - 1) > len {
+            self.fail_str(STR_PTR("initial position out of bounds"), 30);
+            return Vec::new();
+        };
+        let p = posi - 1;
+        if n == 0 {
+            let q = p;
+            let going = true;
+            while going {
+                if q <= 0 {
+                    going = false;
+                    continue;
+                };
+                if utf8_iscont(s_byte(s, q as u64) as i64) == false {
+                    going = false;
+                    continue;
+                };
+                q = q - 1;
+            }
+            return bs_one(v_int(q + 1));
+        };
+        if p < len {
+            if utf8_iscont(s_byte(s, p as u64) as i64) {
+                self.fail_str(STR_PTR("initial position is a continuation byte"), 40);
+                return Vec::new();
+            };
+        };
+        let cnt = n;
+        if cnt < 0 {
+            let q = p;
+            let k = cnt;
+            let going = true;
+            while going {
+                if k >= 0 || q <= 0 {
+                    going = false;
+                    continue;
+                };
+                let r = q - 1;
+                while r > 0 {
+                    if utf8_iscont(s_byte(s, r as u64) as i64) == false {
+                        break;
+                    };
+                    r = r - 1;
+                }
+                q = r;
+                k = k + 1;
+            }
+            if k == 0 {
+                return bs_one(v_int(q + 1));
+            };
+            return bs_one(v_nil());
+        };
+        let q = p;
+        let k = cnt - 1;
+        let going = true;
+        while going {
+            if k <= 0 || q >= len {
+                going = false;
+                continue;
+            };
+            let r = q + 1;
+            while r < len {
+                if utf8_iscont(s_byte(s, r as u64) as i64) == false {
+                    break;
+                };
+                r = r + 1;
+            }
+            q = r;
+            k = k - 1;
+        }
+        if k == 0 {
+            return bs_one(v_int(q + 1));
+        };
+        return bs_one(v_nil());
+    }
+
+    fn utf8_codes(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let len = s_len(s) as i64;
+        if len > 0 {
+            if utf8_iscont(s_byte(s, 0) as i64) {
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                return Vec::new();
+            };
+        };
+        let r = Vec::new();
+        r.push(v_builtin(B_UTF8_CODES_NEXT));
+        r.push(v_str(s));
+        r.push(v_int(0));
+        return r;
+    }
+
+    fn utf8_codes_next(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let len = s_len(s) as i64;
+        let mut_n = 0;
+        if len(args) > 1 {
+            mut_n = self.bi_int(bs_arg(args, 1), 0);
+        };
+        let n = mut_n;
+        if n < len {
+            let q = n;
+            while q < len {
+                if utf8_iscont(s_byte(s, q as u64) as i64) == false {
+                    break;
+                };
+                q = q + 1;
+            }
+            if q >= len {
+                return Vec::new();
+            };
+            let (nxt, cp) = utf8_decode(s, len, q, true);
+            if nxt < 0 {
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                return Vec::new();
+            };
+            let r = Vec::new();
+            r.push(v_int(q + 1));
+            r.push(v_int(cp));
+            return r;
+        };
+        return Vec::new();
+    }
+}

@@ -4,6 +4,7 @@
 @import "sa_std/string.sai"
 @import "sa_std/ptr.sa"
 @import "src/rt.sa"
+@import "src/libm.sai"
 
 fn s_len(s: u64) -> u64 {
     return sa_fmt_buffer_len(s);
@@ -58,6 +59,34 @@ fn s_eq_lit(a: u64, lit: ptr, lit_len: u64) -> bool {
     return ok;
 }
 
+fn s_cmp(a: u64, b: u64) -> i64 {
+    let an = s_len(a);
+    let bn = s_len(b);
+    let n = an;
+    if bn < n {
+        n = bn;
+    };
+    let i: u64 = 0;
+    while i < n {
+        let ca = s_byte(a, i);
+        let cb = s_byte(b, i);
+        if ca < cb {
+            return -1;
+        };
+        if ca > cb {
+            return 1;
+        };
+        i = i + 1;
+    }
+    if an < bn {
+        return -1;
+    };
+    if an > bn {
+        return 1;
+    };
+    return 0;
+}
+
 fn s_slice(s: u64, start: u64, n: u64) -> u64 {
     return SLA_BUF_SLICE(s, start, n);
 }
@@ -76,6 +105,31 @@ fn s_f64(v: f64) -> u64 {
 
 fn s_hex(v: u64) -> u64 {
     return sa_fmt_u64(v, 16);
+}
+
+fn utf8_encode(cp: i64) -> u64 {
+    if cp < 128 {
+        return s_char(cp as u8);
+    };
+    if cp < 2048 {
+        let b1 = 192 | (cp >> 6);
+        let b2 = 128 | (cp & 63);
+        return s_cat(s_char(b1 as u8), s_char(b2 as u8));
+    };
+    if cp < 65536 {
+        let b1 = 224 | (cp >> 12);
+        let b2 = 128 | ((cp >> 6) & 63);
+        let b3 = 128 | (cp & 63);
+        let s1 = s_cat(s_char(b1 as u8), s_char(b2 as u8));
+        return s_cat(s1, s_char(b3 as u8));
+    };
+    let b1 = 240 | (cp >> 18);
+    let b2 = 128 | ((cp >> 12) & 63);
+    let b3 = 128 | ((cp >> 6) & 63);
+    let b4 = 128 | (cp & 63);
+    let s1 = s_cat(s_char(b1 as u8), s_char(b2 as u8));
+    let s2 = s_cat(s1, s_char(b3 as u8));
+    return s_cat(s2, s_char(b4 as u8));
 }
 
 fn s_bool(v: bool) -> u64 {
