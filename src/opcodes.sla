@@ -124,3 +124,5 @@ const B_IO_FFLUSH: i64 = 154;
 const B_IO_ITER: i64 = 155;
 const B_IO_FSETVBUF: i64 = 156;
 const B_IO_POPEN: i64 = 157;
+const B_S_PACK: i64 = 158;
+const B_S_UNPACK: i64 = 159;

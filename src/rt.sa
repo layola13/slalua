@@ -75,3 +75,27 @@
 [MACRO] SLA_CHAR_STR %out_buffer, %code
     %out_buffer = call @sa_string_from_char_code(%code)
 [END_MACRO]
+
+[MACRO] SLA_F64_BITS %out_bits, %value
+    __f64_bits_slot_%out_bits = stack_alloc 8
+    store __f64_bits_slot_%out_bits+0, %value as f64
+    %out_bits = load __f64_bits_slot_%out_bits+0 as u64
+[END_MACRO]
+
+[MACRO] SLA_BITS_F64 %out_value, %bits
+    __bits_f64_slot_%out_value = stack_alloc 8
+    store __bits_f64_slot_%out_value+0, %bits as u64
+    %out_value = load __bits_f64_slot_%out_value+0 as f64
+[END_MACRO]
+
+[MACRO] SLA_F32_BITS %out_bits, %value
+    __f32_bits_slot_%out_bits = stack_alloc 4
+    store __f32_bits_slot_%out_bits+0, %value as f32
+    %out_bits = load __f32_bits_slot_%out_bits+0 as u32
+[END_MACRO]
+
+[MACRO] SLA_BITS_F32 %out_value, %bits
+    __bits_f32_slot_%out_value = stack_alloc 4
+    store __bits_f32_slot_%out_value+0, %bits as u32
+    %out_value = load __bits_f32_slot_%out_value+0 as f32
+[END_MACRO]

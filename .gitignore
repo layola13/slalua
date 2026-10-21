@@ -4,3 +4,23 @@
 zig-out/
 *.out
 *.sa.bc
+
+# Local assistant/tooling state
+.agents/
+.claude/
+.codex/
+.codex-ultra/
+.gemini/
+.grok/
+.mini-agent/
+.muse/
+.opencode/
+.pi/
+cxu.code-workspace
+
+# OS/editor generated
+.DS_Store
+Thumbs.db
+*.log
+__pycache__/
+node_modules/

@@ -1,0 +1,469 @@
+impl Interp {
+    fn bi_pack(&self, args: &Vec<Value>) -> Vec<Value> {
+        let fmt = v_to_string(bs_arg(args, 0));
+        let flen = s_len(fmt) as i64;
+        let res = bs_str(STR_PTR(""), 0);
+        let tot: i64 = 0;
+        let le = true;
+        let ma: i64 = 1;
+        let p: i64 = 0;
+        let argi: i64 = 1;
+        while p < flen {
+            let c = s_byte(fmt, p as u64);
+            p = p + 1;
+            if c == 32 {
+                continue;
+            };
+            if c == 60 {
+                le = true;
+                continue;
+            };
+            if c == 62 {
+                le = false;
+                continue;
+            };
+            if c == 61 {
+                le = true;
+                continue;
+            };
+            if c == 33 {
+                let (n, np) = pack_read_num(fmt, p);
+                if n >= 0 {
+                    ma = n;
+                    p = np;
+                } else {
+                    ma = 8;
+                };
+                if ma < 1 || ma > 16 {
+                    return self.pack_fail(STR_PTR("out of limits"), 13);
+                };
+                if pack_pow2(ma) == false {
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                };
+                continue;
+            };
+            if c == 88 {
+                let (al, np) = self.pack_x_size(fmt, p);
+                if al == -2 {
+                    return self.pack_fail(STR_PTR("invalid next option"), 19);
+                };
+                if al < 1 || al > 16 {
+                    let m = s_cat(s_from(STR_PTR("("), 1), s_i64(al));
+                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 23));
+                    self.fail_text(m2);
+                    return Vec::new();
+                };
+                let a = al;
+                if ma > 1 {
+                    if a > 1 && pack_pow2(a) == false {
+                        return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                    };
+                    let lim = ma;
+                    let eff = a;
+                    if eff > lim {
+                        eff = lim;
+                    };
+                    let pad = pack_align_pad(tot, eff);
+                    res = self.pack_zeros(res, pad);
+                    tot = tot + pad;
+                };
+                p = np;
+                continue;
+            };
+            if c == 120 {
+                res = s_cat(res, s_char(0));
+                tot = tot + 1;
+                continue;
+            };
+
+            let signed = (c == 98 || c == 104 || c == 108 || c == 106 || c == 105);
+            let is_int = (c == 98 || c == 66 || c == 104 || c == 72 || c == 108 || c == 76 ||
+                c == 106 || c == 74 || c == 84 || c == 105 || c == 73);
+            let is_float = (c == 102 || c == 110 || c == 100);
+            let is_c = (c == 99);
+            let is_z = (c == 122);
+            let is_s = (c == 115);
+            if is_int == false && is_float == false && is_c == false && is_z == false && is_s == false {
+                return self.pack_bad_option(c);
+            };
+
+            let n: i64 = -1;
+            let npos = p;
+            if is_c || is_s || c == 105 || c == 73 {
+                let (rn, rp) = pack_read_num(fmt, p);
+                n = rn;
+                npos = rp;
+            };
+            let size = 0;
+            if is_c {
+                if n < 0 {
+                    return self.pack_fail(STR_PTR("missing size for format option 'c'"), 34);
+                };
+                size = n;
+            } else if is_z {
+                size = 1;
+            } else {
+                size = self.pack_number_size(c, n);
+            };
+            if is_c || is_s || c == 105 || c == 73 {
+                p = npos;
+            };
+            if is_int && (size < 1 || size > 16) {
+                return self.pack_fail(STR_PTR("out of limits"), 13);
+            };
+            if is_s && (size < 1 || size > 16) {
+                return self.pack_fail(STR_PTR("out of limits"), 13);
+            };
+            if size < 1 && is_c == false {
+                return self.pack_bad_option(c);
+            };
+
+            let align = size;
+            if is_c || is_z {
+                align = 1;
+            };
+            if ma > 1 {
+                if align > 1 && pack_pow2(align) == false {
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                };
+                let lim = ma;
+                let eff = align;
+                if eff > lim {
+                    eff = lim;
+                };
+                let pad = pack_align_pad(tot, eff);
+                res = self.pack_zeros(res, pad);
+                tot = tot + pad;
+            };
+
+            if is_int {
+                if argi >= (len(args) as i64) {
+                    return self.pack_fail(STR_PTR("missing value"), 13);
+                };
+                let v = self.bi_int(args[argi], 0);
+                argi = argi + 1;
+                if signed {
+                    if size < 8 {
+                        if v < pack_signed_min(size) || v > pack_signed_max(size) {
+                            return self.pack_fail(STR_PTR("integer overflow"), 16);
+                        };
+                    };
+                } else {
+                    if size < 8 {
+                        if v < 0 || (v as u64) > pack_unsigned_max(size) {
+                            return self.pack_fail(STR_PTR("unsigned overflow"), 17);
+                        };
+                    };
+                };
+                res = pack_put_bits(res, v as u64, size, le, signed, v < 0);
+                tot = tot + size;
+                continue;
+            };
+            if is_float {
+                if argi >= (len(args) as i64) {
+                    return self.pack_fail(STR_PTR("missing value"), 13);
+                };
+                let fv = v_as_num(args[argi]);
+                argi = argi + 1;
+                if c == 102 {
+                    let bits: u32 = SLA_F32_BITS(fv as f32);
+                    res = pack_put_bits(res, bits as u64, 4, le, false, false);
+                    tot = tot + 4;
+                } else {
+                    let bits: u64 = SLA_F64_BITS(fv);
+                    res = pack_put_bits(res, bits, 8, le, false, false);
+                    tot = tot + 8;
+                };
+                continue;
+            };
+            if is_c {
+                let sv = v_to_string(bs_arg(args, argi));
+                argi = argi + 1;
+                let sl = s_len(sv) as i64;
+                if sl > size {
+                    return self.pack_fail(STR_PTR("string longer than given size"), 33);
+                };
+                if size > 2147483647 || tot > 2147483647 - size {
+                    return self.pack_fail(STR_PTR("too long"), 8);
+                };
+                res = s_cat(res, sv);
+                res = self.pack_zeros(res, size - sl);
+                tot = tot + size;
+                continue;
+            };
+            if is_z {
+                let sv = v_to_string(bs_arg(args, argi));
+                argi = argi + 1;
+                let sl = s_len(sv) as i64;
+                let i = 0;
+                while i < sl {
+                    if s_byte(sv, i as u64) == 0 {
+                        return self.pack_fail(STR_PTR("string contains zeros"), 22);
+                    };
+                    i = i + 1;
+                }
+                res = s_cat(res, sv);
+                res = s_cat(res, s_char(0));
+                tot = tot + sl + 1;
+                continue;
+            };
+            if is_s {
+                let sv = v_to_string(bs_arg(args, argi));
+                argi = argi + 1;
+                let sl = s_len(sv) as i64;
+                if size < 8 {
+                    if (sl as u64) > pack_unsigned_max(size) {
+                        return self.pack_fail(STR_PTR("string length does not fit in given size"), 46);
+                    };
+                };
+                res = pack_put_bits(res, sl as u64, size, le, false, false);
+                res = s_cat(res, sv);
+                tot = tot + size + sl;
+                continue;
+            };
+        }
+        return bs_one(v_str(res));
+    }
+
+    fn bi_unpack(&self, args: &Vec<Value>) -> Vec<Value> {
+        let fmt = v_to_string(bs_arg(args, 0));
+        let data = v_to_string(bs_arg(args, 1));
+        let dlen = s_len(data) as i64;
+        let flen = s_len(fmt) as i64;
+        let res = Vec::new();
+        let t: i64 = 0;
+        if len(args) > 2 {
+            let rpos = self.bi_int(args[2], 1);
+            if rpos < 0 {
+                t = dlen + rpos;
+            } else {
+                t = rpos - 1;
+            };
+        };
+        if t < 0 || t > dlen {
+            return self.pack_fail(STR_PTR("out of string"), 13);
+        };
+        let le = true;
+        let ma: i64 = 1;
+        let p: i64 = 0;
+        while p < flen {
+            let c = s_byte(fmt, p as u64);
+            p = p + 1;
+            if c == 32 {
+                continue;
+            };
+            if c == 60 {
+                le = true;
+                continue;
+            };
+            if c == 62 {
+                le = false;
+                continue;
+            };
+            if c == 61 {
+                le = true;
+                continue;
+            };
+            if c == 33 {
+                let (n, np) = pack_read_num(fmt, p);
+                if n >= 0 {
+                    ma = n;
+                    p = np;
+                } else {
+                    ma = 8;
+                };
+                if ma < 1 || ma > 16 {
+                    return self.pack_fail(STR_PTR("out of limits"), 13);
+                };
+                if pack_pow2(ma) == false {
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                };
+                continue;
+            };
+            if c == 88 {
+                let (al, np) = self.pack_x_size(fmt, p);
+                if al == -2 {
+                    return self.pack_fail(STR_PTR("invalid next option"), 19);
+                };
+                if al < 1 || al > 16 {
+                    let m = s_cat(s_from(STR_PTR("("), 1), s_i64(al));
+                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 23));
+                    self.fail_text(m2);
+                    return Vec::new();
+                };
+                if ma > 1 {
+                    let lim = ma;
+                    let eff = al;
+                    if eff > lim {
+                        eff = lim;
+                    };
+                    let pad = pack_align_pad(t, eff);
+                    t = t + pad;
+                };
+                p = np;
+                continue;
+            };
+            if c == 120 {
+                t = t + 1;
+                continue;
+            };
+
+            let signed = (c == 98 || c == 104 || c == 108 || c == 106 || c == 105);
+            let is_int = (c == 98 || c == 66 || c == 104 || c == 72 || c == 108 || c == 76 ||
+                c == 106 || c == 74 || c == 84 || c == 105 || c == 73);
+            let is_float = (c == 102 || c == 110 || c == 100);
+            let is_c = (c == 99);
+            let is_z = (c == 122);
+            let is_s = (c == 115);
+            if is_int == false && is_float == false && is_c == false && is_z == false && is_s == false {
+                return self.pack_bad_option(c);
+            };
+
+            let n: i64 = -1;
+            let npos = p;
+            if is_c || is_s || c == 105 || c == 73 {
+                let (rn, rp) = pack_read_num(fmt, p);
+                n = rn;
+                npos = rp;
+            };
+            let size = 0;
+            if is_c {
+                if n < 0 {
+                    return self.pack_fail(STR_PTR("missing size for format option 'c'"), 34);
+                };
+                size = n;
+            } else if is_z {
+                size = 1;
+            } else {
+                size = self.pack_number_size(c, n);
+            };
+            if is_c || is_s || c == 105 || c == 73 {
+                p = npos;
+            };
+            if is_int && (size < 1 || size > 16) {
+                return self.pack_fail(STR_PTR("out of limits"), 13);
+            };
+            if is_s && (size < 1 || size > 16) {
+                return self.pack_fail(STR_PTR("out of limits"), 13);
+            };
+            let align = size;
+            if is_c || is_z {
+                align = 1;
+            };
+            if ma > 1 {
+                if align > 1 && pack_pow2(align) == false {
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                };
+                let lim = ma;
+                let eff = align;
+                if eff > lim {
+                    eff = lim;
+                };
+                let pad = pack_align_pad(t, eff);
+                t = t + pad;
+            };
+
+            if is_c {
+                if t + size > dlen {
+                    return self.pack_fail(STR_PTR("data string too short"), 21);
+                };
+                res.push(v_str(s_slice(data, t as u64, size as u64)));
+                t = t + size;
+                continue;
+            };
+            if is_z {
+                let i = t;
+                let found = -1;
+                while i < dlen {
+                    if s_byte(data, i as u64) == 0 {
+                        found = i;
+                        i = dlen;
+                    } else {
+                        i = i + 1;
+                    };
+                }
+                if found < 0 {
+                    return self.pack_fail(STR_PTR("unfinished string"), 17);
+                };
+                res.push(v_str(s_slice(data, t as u64, (found - t) as u64)));
+                t = found + 1;
+                continue;
+            };
+            if is_s {
+                if t + size > dlen {
+                    return self.pack_fail(STR_PTR("data string too short"), 21);
+                };
+                let sl = pack_read_bits(data, t, size, le) as i64;
+                if sl < 0 {
+                    return self.pack_fail(STR_PTR("data string too short"), 21);
+                };
+                t = t + size;
+                if t + sl > dlen {
+                    return self.pack_fail(STR_PTR("data string too short"), 21);
+                };
+                res.push(v_str(s_slice(data, t as u64, sl as u64)));
+                t = t + sl;
+                continue;
+            };
+            if is_int || is_float {
+                if t + size > dlen {
+                    return self.pack_fail(STR_PTR("data string too short"), 21);
+                };
+                let bits = pack_read_bits(data, t, size, le);
+                if is_int && size > 8 {
+                    let k = size - 8;
+                    let ok = true;
+                    let i = 0;
+                    let want: u8 = 0;
+                    if signed {
+                        let signbit = (1 as u64) << 63;
+                        if (bits & signbit) != 0 {
+                            want = 255;
+                        };
+                    };
+                    while i < k {
+                        let at = t + i;
+                        if le {
+                            at = t + 8 + i;
+                        };
+                        let b = s_byte(data, at as u64);
+                        if b != want {
+                            ok = false;
+                            i = k;
+                        } else {
+                            i = i + 1;
+                        };
+                    }
+                    if ok == false {
+                        if size == 16 && signed {
+                            return self.pack_fail(STR_PTR("16-byte integer does not fit into Lua Integer"), 45);
+                        };
+                        return self.pack_fail(STR_PTR("does not fit"), 12);
+                    };
+                };
+                t = t + size;
+                if is_float {
+                    if c == 102 {
+                        let fv: f32 = SLA_BITS_F32(bits as u32);
+                        res.push(v_num(fv as f64));
+                    } else {
+                        let fv: f64 = SLA_BITS_F64(bits);
+                        res.push(v_num(fv));
+                    };
+                    continue;
+                };
+                let ival = bits as i64;
+                if signed && size < 8 {
+                    let signbit = (1 as u64) << ((size * 8 - 1) as u64);
+                    if (bits & signbit) != 0 {
+                        ival = ival - ((1 as i64) << ((size * 8) as u64));
+                    };
+                };
+                res.push(v_int(ival));
+                continue;
+            };
+        }
+        res.push(v_int(t + 1));
+        return res;
+    }
+}

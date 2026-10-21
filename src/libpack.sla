@@ -5,6 +5,7 @@
 @import "src/interp_core.sla"
 @import "src/opcodes.sla"
 @import "src/libutil.sla"
+@import "src/rt.sa"
 
 fn pack_digit(c: u8) -> bool {
     if c >= 48 && c <= 57 {
@@ -51,6 +52,109 @@ fn pack_takes_num(c: u8) -> bool {
     return false;
 }
 
+fn pack_pow2(n: i64) -> bool {
+    if n <= 0 {
+        return false;
+    };
+    return (n & (n - 1)) == 0;
+}
+
+fn pack_signed_min(size: i64) -> i64 {
+    if size >= 8 {
+        return 0 - 9223372036854775807 - 1;
+    };
+    return 0 - ((1 as i64) << (size * 8 - 1));
+}
+
+fn pack_signed_max(size: i64) -> i64 {
+    if size >= 8 {
+        return 9223372036854775807;
+    };
+    return ((1 as i64) << (size * 8 - 1)) - 1;
+}
+
+fn pack_unsigned_max(size: i64) -> u64 {
+    if size >= 8 {
+        return 9223372036854775807;
+    };
+    return ((1 as u64) << (size * 8)) - 1;
+}
+
+fn pack_align_pad(total: i64, align: i64) -> i64 {
+    if align <= 1 {
+        return 0;
+    };
+    return (align - (total & (align - 1))) & (align - 1);
+}
+
+fn pack_put_bits(out: u64, bits: u64, size: i64, little: bool, signed: bool, neg: bool) -> u64 {
+    let res = out;
+    let low = size;
+    if low > 8 {
+        low = 8;
+    };
+    if size > 8 && little == false {
+        let ext: u8 = 0;
+        if signed && neg {
+            ext = 255;
+        };
+        let k = size - 8;
+        let e = 0;
+        while e < k {
+            res = s_cat(res, s_char(ext));
+            e = e + 1;
+        }
+    };
+    let i: i64 = 0;
+    while i < low {
+        let shift: u64 = 0;
+        if little {
+            shift = (i * 8) as u64;
+        } else {
+            shift = ((low - 1 - i) * 8) as u64;
+        };
+        let b = (bits >> shift) & 255;
+        res = s_cat(res, s_char(b as u8));
+        i = i + 1;
+    }
+    if size > 8 && little {
+        let ext: u8 = 0;
+        if signed && neg {
+            ext = 255;
+        };
+        let k = size - 8;
+        let e = 0;
+        while e < k {
+            res = s_cat(res, s_char(ext));
+            e = e + 1;
+        }
+    };
+    return res;
+}
+
+fn pack_read_bits(s: u64, pos: i64, size: i64, little: bool) -> u64 {
+    let low = size;
+    if low > 8 {
+        low = 8;
+    };
+    let start = pos;
+    if size > 8 && little == false {
+        start = pos + (size - 8);
+    };
+    let bits: u64 = 0;
+    let i: i64 = 0;
+    while i < low {
+        let j = i;
+        if little == false {
+            j = low - 1 - i;
+        };
+        let b = s_byte(s, (start + j) as u64) as u64;
+        bits = bits | (b << ((i * 8) as u64));
+        i = i + 1;
+    }
+    return bits;
+}
+
 fn pack_read_num(fmt: u64, pos: i64) -> (i64, i64) {
     let flen = s_len(fmt) as i64;
     let n = 0;
@@ -61,7 +165,11 @@ fn pack_read_num(fmt: u64, pos: i64) -> (i64, i64) {
         if pack_digit(d) == false {
             break;
         };
-        n = n * 10 + (d as i64) - 48;
+        let dig = (d as i64) - 48;
+        if n > (9223372036854775807 - dig) / 10 {
+            return (-2, p);
+        };
+        n = n * 10 + dig;
         has = true;
         p = p + 1;
     }
@@ -99,8 +207,17 @@ impl Interp {
         while pos < flen {
             let c = s_byte(fmt, pos as u64);
             pos = pos + 1;
+            if c == 115 || c == 122 {
+                self.fail_str(STR_PTR("variable-length format"), 23);
+                return 0;
+            };
             if c == 33 {
                 maxalign = 8;
+                let (n, np) = pack_read_num(fmt, pos);
+                if n > 0 {
+                    maxalign = n;
+                    pos = np;
+                };
                 continue;
             };
             if c == 60 || c == 62 {
@@ -115,7 +232,12 @@ impl Interp {
                 continue;
             };
             if c == 88 {
-                let al = self.pack_next_align(fmt, pos);
+                let (al, np) = self.pack_x_size(fmt, pos);
+                if al == -2 {
+                    self.fail_str(STR_PTR("invalid next option"), 19);
+                    return 0;
+                };
+                pos = np;
                 if al <= 1 {
                     continue;
                 };
@@ -135,6 +257,10 @@ impl Interp {
             let size = pack_default_size(c);
             if pack_takes_num(c) {
                 let (n, np) = pack_read_num(fmt, pos);
+                if n == -2 {
+                    self.fail_str(STR_PTR("invalid format"), 14);
+                    return 0;
+                };
                 if n < 0 {
                     if c == 99 {
                         self.fail_str(STR_PTR("missing size for format option 'c'"), 34);
@@ -146,6 +272,10 @@ impl Interp {
                 };
             };
             if c == 99 {
+                if size > 9223372036854775807 - total {
+                    self.fail_str(STR_PTR("too large"), 9);
+                    return 0;
+                };
                 total = total + size;
                 continue;
             };
@@ -166,4 +296,77 @@ impl Interp {
         }
         return total;
     }
+
+    fn pack_fail(&self, msg: ptr, n: u64) -> Vec<Value> {
+        self.fail_str(msg, n);
+        return Vec::new();
+    }
+
+    fn pack_bad_option(&self, c: u8) -> Vec<Value> {
+        let m = s_cat(s_from(STR_PTR("invalid format option '"), 23), s_char(c));
+        let m2 = s_cat(m, s_from(STR_PTR("'"), 1));
+        self.fail_text(m2);
+        return Vec::new();
+    }
+
+    fn pack_zeros(&self, out: u64, n: i64) -> u64 {
+        let res = out;
+        let i = 0;
+        while i < n {
+            res = s_cat(res, s_char(0));
+            i = i + 1;
+        }
+        return res;
+    }
+
+    fn pack_number_size(&self, c: u8, n: i64) -> i64 {
+        if c == 98 || c == 66 {
+            return 1;
+        };
+        if c == 104 || c == 72 {
+            return 2;
+        };
+        if c == 108 || c == 76 || c == 106 || c == 74 || c == 84 || c == 110 || c == 100 {
+            return 8;
+        };
+        if c == 102 {
+            return 4;
+        };
+        if c == 105 || c == 73 {
+            if n >= 0 {
+                return n;
+            };
+            return 4;
+        };
+        if c == 115 {
+            if n >= 0 {
+                return n;
+            };
+            return 8;
+        };
+        return 0;
+    }
+
+    fn pack_x_size(&self, fmt: u64, pos: i64) -> (i64, i64) {
+        let flen = s_len(fmt) as i64;
+        if pos >= flen {
+            return (-2, pos);
+        };
+        let c = s_byte(fmt, pos as u64);
+        if c == 99 || c == 122 || c == 115 || c == 120 || c == 88 || c == 32 {
+            return (-2, pos);
+        };
+        let (n, np) = pack_read_num(fmt, pos + 1);
+        if n == -2 {
+            return (-2, pos);
+        };
+        let size = self.pack_number_size(c, n);
+        if n >= 0 {
+            return (size, np);
+        };
+        return (size, pos + 1);
+    }
+
 }
+
+@import "src/libpack_io.sla"

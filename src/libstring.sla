@@ -128,6 +128,12 @@ impl Interp {
             let f = v_to_string(bs_arg(args, 0));
             return bs_one(v_int(self.packsize(f)));
         };
+        if id == B_S_PACK {
+            return self.bi_pack(args);
+        };
+        if id == B_S_UNPACK {
+            return self.bi_unpack(args);
+        };
         if id == B_S_FIND {
             return self.pat_find_aux(true, args);
         };

@@ -122,6 +122,8 @@ impl Interp {
         self.table_set_str(st, bs_str(STR_PTR("reverse"), 7), v_builtin(B_S_REVERSE));
         self.table_set_str(st, bs_str(STR_PTR("format"), 6), v_builtin(B_S_FORMAT));
         self.table_set_str(st, bs_str(STR_PTR("packsize"), 8), v_builtin(B_S_PACKSIZE));
+        self.table_set_str(st, bs_str(STR_PTR("pack"), 4), v_builtin(B_S_PACK));
+        self.table_set_str(st, bs_str(STR_PTR("unpack"), 6), v_builtin(B_S_UNPACK));
         self.table_set_str(st, bs_str(STR_PTR("find"), 4), v_builtin(B_S_FIND));
         self.table_set_str(st, bs_str(STR_PTR("match"), 5), v_builtin(B_S_MATCH));
         self.table_set_str(st, bs_str(STR_PTR("gmatch"), 6), v_builtin(B_S_GMATCH));
@@ -432,7 +434,7 @@ impl Interp {
             };
             return bs_one(t);
         };
-        if id >= B_S_LEN && id <= B_S_GSUB {
+        if (id >= B_S_LEN && id <= B_S_GSUB) || id == B_S_PACK || id == B_S_UNPACK {
             return self.builtin_string(id, &args);
         };
         if id == B_OS_CLOCK || id == B_OS_TIME || (id >= B_OS_GETENV && id <= B_OS_EXIT) {
