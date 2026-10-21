@@ -167,11 +167,18 @@ impl Lexer {
 
     fn read_long(&self, level: i64, line: i64) -> u64 {
         let out = s_from(STR_PTR(""), 0);
+        let first = true;
         while self.pos < self.len {
             if self.long_close(level) {
                 return out;
             };
             let c = self.take();
+            if first {
+                first = false;
+                if c == 10 || c == 13 {
+                    continue;
+                };
+            };
             out = s_cat(out, s_char(c));
         }
         self.fail(line);

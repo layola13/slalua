@@ -103,6 +103,7 @@ impl Interp {
 
     fn eval_call(&self, env: i64, id: i64) -> Vec<Value> {
         let nd = self.nd(id);
+        self.curline = nd.line;
         if nd.kind == NK_CALL {
             let f = self.eval(env, nd.a);
             let args = self.eval_list(env, nd.b);

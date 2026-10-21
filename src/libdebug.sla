@@ -1,0 +1,175 @@
+@import "sa_std/vec.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/interp_expr.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+impl Interp {
+    fn dbg_info_table(&self, f: Value) -> Value {
+        let t = self.new_table();
+        self.table_set_str(t, istr(STR_PTR("currentline"), 11), v_int(self.curline));
+        self.table_set_str(t, istr(STR_PTR("source"), 6), v_str(s_from(STR_PTR("@?"), 2)));
+        self.table_set_str(t, istr(STR_PTR("short_src"), 9), v_str(s_from(STR_PTR("?"), 1)));
+        self.table_set_str(t, istr(STR_PTR("what"), 4), v_str(s_from(STR_PTR("Lua"), 3)));
+        self.table_set_str(t, istr(STR_PTR("linedefined"), 11), v_int(-1));
+        self.table_set_str(t, istr(STR_PTR("lastlinedefined"), 15), v_int(-1));
+        self.table_set_str(t, istr(STR_PTR("name"), 4), v_str(s_from(STR_PTR("?"), 1)));
+        self.table_set_str(t, istr(STR_PTR("namewhat"), 8), v_str(s_from(STR_PTR(""), 0)));
+        self.table_set_str(t, istr(STR_PTR("nups"), 4), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("nparams"), 7), v_int(0));
+        self.table_set_str(t, istr(STR_PTR("isvararg"), 8), v_bool(true));
+        if f.tag == VT_FUNC {
+            self.table_set_str(t, istr(STR_PTR("func"), 4), f);
+            let e = self.funcs[f.i].env;
+            let n = 0;
+            if e >= 0 {
+                n = len(self.envs[e].vars) as i64;
+            };
+            self.table_set_str(t, istr(STR_PTR("nups"), 4), v_int(n));
+            let np = len(self.funcs[f.i].params) as i64;
+            self.table_set_str(t, istr(STR_PTR("nparams"), 7), v_int(np));
+        };
+        return v_table(t);
+    }
+
+    fn dbg_getinfo(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = v_nil();
+        if len(args) > 0 {
+            f = args[0];
+        };
+        return bs_one(self.dbg_info_table(f));
+    }
+
+    fn dbg_getupvalue(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = bs_arg(args, 0);
+        let n = self.bi_int(bs_arg(args, 1), 1);
+        if f.tag != VT_FUNC {
+            return Vec::new();
+        };
+        let env = self.funcs[f.i].env;
+        if env < 0 {
+            return Vec::new();
+        };
+        let vars = self.envs[env].vars;
+        if n < 1 || n > (len(vars) as i64) {
+            return Vec::new();
+        };
+        let r = Vec::new();
+        r.push(v_str(vars[n - 1].name));
+        r.push(vars[n - 1].val);
+        return r;
+    }
+
+    fn dbg_setupvalue(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = bs_arg(args, 0);
+        let n = self.bi_int(bs_arg(args, 1), 1);
+        let val = bs_arg(args, 2);
+        if f.tag != VT_FUNC {
+            return Vec::new();
+        };
+        let env = self.funcs[f.i].env;
+        if env < 0 {
+            return Vec::new();
+        };
+        let vars = self.envs[env].vars;
+        if n < 1 || n > (len(vars) as i64) {
+            return Vec::new();
+        };
+        self.envs[env].vars[n - 1].val = val;
+        let r = Vec::new();
+        r.push(v_str(vars[n - 1].name));
+        r.push(self.envs[env].vars[n - 1].val);
+        return r;
+    }
+
+    fn dbg_getlocal(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = bs_arg(args, 0);
+        let n = self.bi_int(bs_arg(args, 1), 1);
+        if f.tag != VT_FUNC {
+            return Vec::new();
+        };
+        let env = self.funcs[f.i].env;
+        if env < 0 {
+            return Vec::new();
+        };
+        let vars = self.envs[env].vars;
+        if n < 1 || n > (len(vars) as i64) {
+            return Vec::new();
+        };
+        let r = Vec::new();
+        r.push(v_str(vars[n - 1].name));
+        r.push(vars[n - 1].val);
+        return r;
+    }
+
+    fn dbg_setlocal(&self, args: &Vec<Value>) -> Vec<Value> {
+        let f = bs_arg(args, 0);
+        let n = self.bi_int(bs_arg(args, 1), 1);
+        let val = bs_arg(args, 2);
+        if f.tag != VT_FUNC {
+            return Vec::new();
+        };
+        let env = self.funcs[f.i].env;
+        if env < 0 {
+            return Vec::new();
+        };
+        let vars = self.envs[env].vars;
+        if n < 1 || n > (len(vars) as i64) {
+            return Vec::new();
+        };
+        self.envs[env].vars[n - 1].val = val;
+        let r = Vec::new();
+        r.push(v_str(vars[n - 1].name));
+        r.push(self.envs[env].vars[n - 1].val);
+        return r;
+    }
+
+    fn dbg_traceback(&self, args: &Vec<Value>) -> Vec<Value> {
+        let msg = bs_str(STR_PTR("stack traceback:"), 16);
+        if len(args) > 0 {
+            let a = args[0];
+            if a.tag == VT_STR {
+                msg = a.s;
+            };
+        };
+        return bs_one(v_str(msg));
+    }
+
+    fn dbg_sethook(&self, args: &Vec<Value>) -> Vec<Value> {
+        return Vec::new();
+    }
+
+    fn dbg_gethook(&self, args: &Vec<Value>) -> Vec<Value> {
+        return bs_one(v_nil());
+    }
+
+    fn dbg_getregistry(&self, args: &Vec<Value>) -> Vec<Value> {
+        return bs_one(v_table(self.new_table()));
+    }
+
+    fn dbg_getmetatable(&self, args: &Vec<Value>) -> Vec<Value> {
+        let o = bs_arg(args, 0);
+        if o.tag == VT_TABLE {
+            let m = self.tables[o.i].meta;
+            if m >= 0 {
+                return bs_one(v_table(m));
+            };
+        };
+        return bs_one(v_nil());
+    }
+
+    fn dbg_setmetatable(&self, args: &Vec<Value>) -> Vec<Value> {
+        let o = bs_arg(args, 0);
+        let m = bs_arg(args, 1);
+        if o.tag == VT_TABLE {
+            if m.tag == VT_TABLE {
+                self.tables[o.i].meta = m.i;
+            } else {
+                self.tables[o.i].meta = -1;
+            };
+        };
+        return bs_one(o);
+    }
+}

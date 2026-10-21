@@ -12,6 +12,7 @@
 @import "src/libstring.sla"
 @import "src/libtable.sla"
 @import "src/libutf8.sla"
+@import "src/libdebug.sla"
 
 fn digit_val(c: u8) -> i64 {
     if c >= 48 && c <= 57 {
@@ -81,6 +82,16 @@ impl Interp {
         let dbg = self.new_table();
         self.table_set_str(dbg, bs_str(STR_PTR("getinfo"), 7), v_builtin(B_DBG_INFO));
         self.table_set_str(dbg, bs_str(STR_PTR("traceback"), 9), v_builtin(B_DBG_TRACE));
+        self.table_set_str(dbg, bs_str(STR_PTR("getinfo"), 7), v_builtin(B_DBG_GETINFO));
+        self.table_set_str(dbg, bs_str(STR_PTR("getupvalue"), 10), v_builtin(B_DBG_GETUPVALUE));
+        self.table_set_str(dbg, bs_str(STR_PTR("setupvalue"), 10), v_builtin(B_DBG_SETUPVALUE));
+        self.table_set_str(dbg, bs_str(STR_PTR("getlocal"), 8), v_builtin(B_DBG_GETLOCAL));
+        self.table_set_str(dbg, bs_str(STR_PTR("setlocal"), 8), v_builtin(B_DBG_SETLOCAL));
+        self.table_set_str(dbg, bs_str(STR_PTR("sethook"), 7), v_builtin(B_DBG_SETHOOK));
+        self.table_set_str(dbg, bs_str(STR_PTR("gethook"), 7), v_builtin(B_DBG_GETHOOK));
+        self.table_set_str(dbg, bs_str(STR_PTR("getregistry"), 11), v_builtin(B_DBG_GETREGISTRY));
+        self.table_set_str(dbg, bs_str(STR_PTR("getmetatable"), 12), v_builtin(B_DBG_GETMETATABLE));
+        self.table_set_str(dbg, bs_str(STR_PTR("setmetatable"), 12), v_builtin(B_DBG_SETMETATABLE));
         self.table_set_str(self.globals, bs_str(STR_PTR("debug"), 5), v_table(dbg));
         let smeta = self.new_table();
         self.table_set_str(smeta, bs_str(STR_PTR("__add"), 5), v_builtin(B_SM_ADD));
@@ -449,6 +460,39 @@ impl Interp {
         };
         if id == B_UTF8_CODES_NEXT {
             return self.utf8_codes_next(&args);
+        };
+        if id == B_DBG_GETINFO {
+            return self.dbg_getinfo(&args);
+        };
+        if id == B_DBG_GETUPVALUE {
+            return self.dbg_getupvalue(&args);
+        };
+        if id == B_DBG_SETUPVALUE {
+            return self.dbg_setupvalue(&args);
+        };
+        if id == B_DBG_GETLOCAL {
+            return self.dbg_getlocal(&args);
+        };
+        if id == B_DBG_SETLOCAL {
+            return self.dbg_setlocal(&args);
+        };
+        if id == B_DBG_TRACEBACK {
+            return self.dbg_traceback(&args);
+        };
+        if id == B_DBG_SETHOOK {
+            return self.dbg_sethook(&args);
+        };
+        if id == B_DBG_GETHOOK {
+            return self.dbg_gethook(&args);
+        };
+        if id == B_DBG_GETREGISTRY {
+            return self.dbg_getregistry(&args);
+        };
+        if id == B_DBG_GETMETATABLE {
+            return self.dbg_getmetatable(&args);
+        };
+        if id == B_DBG_SETMETATABLE {
+            return self.dbg_setmetatable(&args);
         };
         if id == B_SM_ADD || id == B_SM_SUB || id == B_SM_MUL || id == B_SM_MOD || id == B_SM_POW || id == B_SM_DIV || id == B_SM_IDIV {
             return self.sm_arith(id, &args);
