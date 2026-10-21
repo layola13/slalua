@@ -280,7 +280,7 @@ impl Interp {
                 } else {
                     if d >= 49 && d <= 57 {
                         let idx = (d as i64) - 49;
-                        if idx >= st.level {
+                        if idx >= st.level && idx != 0 {
                             let e1 = s_from(STR_PTR("invalid capture index %"), 23);
                             let e2 = s_cat(e1, s_char(d));
                             self.fail_text(e2);
