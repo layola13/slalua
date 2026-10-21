@@ -175,7 +175,7 @@ impl Interp {
         while i >= 0 {
             if s_eq(vars[i].name, name) {
                 if vars[i].cons != 0 {
-                    self.fail_str(STR_PTR("attempt to assign to const variable"), 38);
+                    self.fail_str(STR_PTR("attempt to assign to const variable"), 35);
                     return false;
                 };
                 let nv = value_new(val.tag, val.i, val.f, val.s);
@@ -354,7 +354,7 @@ impl Interp {
 
     fn table_set(&self, tid: i64, key: Value, val: Value) -> void {
         if key.tag == VT_NIL {
-            self.fail_str(STR_PTR("table index is nil"), 19);
+            self.fail_str(STR_PTR("table index is nil"), 18);
             return;
         };
         let h = v_hash(&key);

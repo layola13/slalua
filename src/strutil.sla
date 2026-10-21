@@ -107,6 +107,150 @@ fn s_hex(v: u64) -> u64 {
     return sa_fmt_u64(v, 16);
 }
 
+fn s_is_digit(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    return false;
+}
+
+fn s_word_is(t: u64, pos: i64, len: i64, word: ptr) -> bool {
+    let n = s_len(t) as i64;
+    let i = 0;
+    while i < len {
+        if pos + i >= n {
+            return false;
+        };
+        let c = s_byte(t, (pos + i) as u64);
+        let w = SLA_BYTE_AT(word, i);
+        let cl = c;
+        if cl >= 65 && cl <= 90 {
+            cl = cl + 32;
+        };
+        if cl != w {
+            return false;
+        };
+        i = i + 1;
+    }
+    return true;
+}
+
+fn s_hex_digits(t: u64, pos: i64) -> i64 {
+    let n = s_len(t) as i64;
+    let i = pos;
+    let cnt = 0;
+    while i < n {
+        let c = s_byte(t, i as u64);
+        let ok = false;
+        if c >= 48 && c <= 57 {
+            ok = true;
+        };
+        if c >= 97 && c <= 102 {
+            ok = true;
+        };
+        if c >= 65 && c <= 70 {
+            ok = true;
+        };
+        if ok == false {
+            break;
+        };
+        cnt = cnt + 1;
+        i = i + 1;
+    }
+    return cnt;
+}
+
+fn s_num_valid(t: u64) -> bool {
+    let n = s_len(t) as i64;
+    let i = 0;
+    if i < n {
+        let c = s_byte(t, i as u64);
+        if c == 43 || c == 45 {
+            i = i + 1;
+        };
+    };
+    if i >= n {
+        return false;
+    };
+    let c0 = s_byte(t, i as u64);
+    if c0 == 105 || c0 == 73 {
+        return s_word_is(t, i, 3, STR_PTR("inf"));
+    };
+    if c0 == 110 || c0 == 78 {
+        return s_word_is(t, i, 3, STR_PTR("nan"));
+    };
+    if c0 == 48 && i + 1 < n {
+        let h = s_byte(t, (i + 1) as u64);
+        if h == 120 || h == 88 {
+            let j = i + 2;
+            let cnt = s_hex_digits(t, j);
+            if cnt == 0 {
+                return false;
+            };
+            j = j + cnt;
+            if j < n && s_byte(t, j as u64) == 46 {
+                j = j + 1;
+                let c2 = s_hex_digits(t, j);
+                j = j + c2;
+            };
+            if j < n {
+                let p = s_byte(t, j as u64);
+                if p == 112 || p == 80 {
+                    j = j + 1;
+                    if j < n {
+                        let sg = s_byte(t, j as u64);
+                        if sg == 43 || sg == 45 {
+                            j = j + 1;
+                        };
+                    };
+                    let e = s_hex_digits(t, j);
+                    j = j + e;
+                    if e == 0 {
+                        return false;
+                    };
+                };
+            };
+            return j == n;
+        };
+    };
+    let digits = 0;
+    while i < n && s_is_digit(s_byte(t, i as u64)) {
+        i = i + 1;
+        digits = digits + 1;
+    }
+    if i < n && s_byte(t, i as u64) == 46 {
+        i = i + 1;
+        while i < n && s_is_digit(s_byte(t, i as u64)) {
+            i = i + 1;
+            digits = digits + 1;
+        }
+    };
+    if digits == 0 {
+        return false;
+    };
+    if i < n {
+        let e = s_byte(t, i as u64);
+        if e == 101 || e == 69 {
+            i = i + 1;
+            if i < n {
+                let sg = s_byte(t, i as u64);
+                if sg == 43 || sg == 45 {
+                    i = i + 1;
+                };
+            };
+            let ed = 0;
+            while i < n && s_is_digit(s_byte(t, i as u64)) {
+                i = i + 1;
+                ed = ed + 1;
+            }
+            if ed == 0 {
+                return false;
+            };
+        };
+    };
+    return i == n;
+}
+
 fn utf8_encode(cp: i64) -> u64 {
     if cp < 128 {
         return s_char(cp as u8);

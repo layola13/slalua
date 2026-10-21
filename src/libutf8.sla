@@ -108,7 +108,7 @@ impl Interp {
         while i < (len(args) as i64) {
             let cp = self.bi_int(args[i], 0);
             if cp < 0 || cp > UTF8_MAXUNICODE {
-                self.fail_str(STR_PTR("value out of range"), 19);
+                self.fail_str(STR_PTR("value out of range"), 18);
                 return Vec::new();
             };
             out = s_cat(out, utf8_encode(cp));
@@ -198,7 +198,7 @@ impl Interp {
         while i <= j {
             let (nxt, cp) = utf8_decode(s, len, i, lax == false);
             if nxt < 0 {
-                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 18);
                 return Vec::new();
             };
             r.push(v_int(cp));
@@ -244,7 +244,7 @@ impl Interp {
         };
         if p < len {
             if utf8_iscont(s_byte(s, p as u64) as i64) {
-                self.fail_str(STR_PTR("initial position is a continuation byte"), 40);
+                self.fail_str(STR_PTR("initial position is a continuation byte"), 39);
                 return Vec::new();
             };
         };
@@ -302,7 +302,7 @@ impl Interp {
         let len = s_len(s) as i64;
         if len > 0 {
             if utf8_iscont(s_byte(s, 0) as i64) {
-                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 18);
                 return Vec::new();
             };
         };
@@ -334,7 +334,7 @@ impl Interp {
             };
             let (nxt, cp) = utf8_decode(s, len, q, true);
             if nxt < 0 {
-                self.fail_str(STR_PTR("invalid UTF-8 code"), 19);
+                self.fail_str(STR_PTR("invalid UTF-8 code"), 18);
                 return Vec::new();
             };
             let r = Vec::new();

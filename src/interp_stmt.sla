@@ -128,7 +128,7 @@ impl Interp {
             let f = self.eval(env, nd.a);
             let old = self.table_get(self.globals, v_str(nd.s));
             if old.tag != VT_NIL {
-                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nd.s, s_from(STR_PTR("' already defined"), 16)));
+                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nd.s, s_from(STR_PTR("' already defined"), 17)));
                 self.fail_text(m);
                 return;
             };
@@ -172,7 +172,7 @@ impl Interp {
             };
             let old = self.table_get(self.globals, v_str(nn.s));
             if old.tag != VT_NIL {
-                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nn.s, s_from(STR_PTR("' already defined"), 16)));
+                let m = s_cat(s_from(STR_PTR("global '"), 8), s_cat(nn.s, s_from(STR_PTR("' already defined"), 17)));
                 self.fail_text(m);
                 return;
             };
@@ -257,7 +257,7 @@ impl Interp {
             stv = self.eval(env, nd.c);
         };
         if v_is_number(sv) == false || v_is_number(lv) == false || v_is_number(stv) == false {
-            self.fail_str(STR_PTR("bad numeric for limit"), 23);
+            self.fail_str(STR_PTR("bad numeric for limit"), 21);
             return;
         };
         let all_int = sv.tag == VT_INT && lv.tag == VT_INT && stv.tag == VT_INT;
@@ -265,7 +265,7 @@ impl Interp {
             let i = sv.i;
             let step = stv.i;
             if step == 0 {
-                self.fail_str(STR_PTR("numeric for step is zero"), 25);
+                self.fail_str(STR_PTR("numeric for step is zero"), 24);
                 return;
             };
             let going = true;
@@ -293,7 +293,7 @@ impl Interp {
         let i = v_as_num(sv);
         let step = v_as_num(stv);
         if step == 0.0 {
-            self.fail_str(STR_PTR("numeric for step is zero"), 25);
+            self.fail_str(STR_PTR("numeric for step is zero"), 24);
             return;
         };
         let going = true;

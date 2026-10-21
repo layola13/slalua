@@ -1,0 +1,169 @@
+@import "sa_std/vec.sa"
+@import "sa_std/string.sa"
+@import "src/value.sla"
+@import "src/strutil.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+@import "src/libutil.sla"
+
+fn pack_digit(c: u8) -> bool {
+    if c >= 48 && c <= 57 {
+        return true;
+    };
+    return false;
+}
+
+fn pack_default_size(c: u8) -> i64 {
+    if c == 98 || c == 66 {
+        return 1;
+    };
+    if c == 104 || c == 72 {
+        return 2;
+    };
+    if c == 108 || c == 76 || c == 106 || c == 74 || c == 84 {
+        return 8;
+    };
+    if c == 102 {
+        return 4;
+    };
+    if c == 110 || c == 100 {
+        return 8;
+    };
+    if c == 105 || c == 73 {
+        return 4;
+    };
+    if c == 115 {
+        return 8;
+    };
+    if c == 122 {
+        return 8;
+    };
+    if c == 120 {
+        return 1;
+    };
+    return 0;
+}
+
+fn pack_takes_num(c: u8) -> bool {
+    if c == 105 || c == 73 || c == 115 || c == 99 {
+        return true;
+    };
+    return false;
+}
+
+fn pack_read_num(fmt: u64, pos: i64) -> (i64, i64) {
+    let flen = s_len(fmt) as i64;
+    let n = 0;
+    let has = false;
+    let p = pos;
+    while p < flen {
+        let d = s_byte(fmt, p as u64);
+        if pack_digit(d) == false {
+            break;
+        };
+        n = n * 10 + (d as i64) - 48;
+        has = true;
+        p = p + 1;
+    }
+    if has == false {
+        return (-1, pos);
+    };
+    return (n, p);
+}
+
+impl Interp {
+    fn pack_next_align(&self, fmt: u64, pos: i64) -> i64 {
+        let flen = s_len(fmt) as i64;
+        if pos >= flen {
+            return 0;
+        };
+        let c = s_byte(fmt, pos as u64);
+        if c == 99 {
+            return 0;
+        };
+        let sz = pack_default_size(c);
+        if pack_takes_num(c) {
+            let (n, np) = pack_read_num(fmt, pos + 1);
+            if n > 0 {
+                return n;
+            };
+        };
+        return sz;
+    }
+
+    fn packsize(&self, fmt: u64) -> i64 {
+        let flen = s_len(fmt) as i64;
+        let pos = 0;
+        let total = 0;
+        let maxalign = 1;
+        while pos < flen {
+            let c = s_byte(fmt, pos as u64);
+            pos = pos + 1;
+            if c == 33 {
+                maxalign = 8;
+                continue;
+            };
+            if c == 60 || c == 62 {
+                maxalign = 1;
+                continue;
+            };
+            if c == 61 {
+                maxalign = 8;
+                continue;
+            };
+            if c == 32 {
+                continue;
+            };
+            if c == 88 {
+                let al = self.pack_next_align(fmt, pos);
+                if al <= 1 {
+                    continue;
+                };
+                let a = al;
+                let lim = maxalign;
+                let eff = a;
+                let e2 = eff;
+                if e2 > lim {
+                    let pad = (lim - (total & (lim - 1))) & (lim - 1);
+                    total = total + pad;
+                    continue;
+                };
+                let pad = (e2 - (total & (e2 - 1))) & (e2 - 1);
+                total = total + pad;
+                continue;
+            };
+            let size = pack_default_size(c);
+            if pack_takes_num(c) {
+                let (n, np) = pack_read_num(fmt, pos);
+                if n < 0 {
+                    if c == 99 {
+                        self.fail_str(STR_PTR("missing size for format option 'c'"), 34);
+                        return 0;
+                    };
+                } else {
+                    pos = np;
+                    size = size + (n - size);
+                };
+            };
+            if c == 99 {
+                total = total + size;
+                continue;
+            };
+            let align = size;
+            if align <= 1 {
+                total = total + size;
+                continue;
+            };
+            let lim = maxalign;
+            let a = align;
+            if a > lim {
+                let pad = (lim - (total & (lim - 1))) & (lim - 1);
+                total = total + pad + size;
+                continue;
+            };
+            let pad = (a - (total & (a - 1))) & (a - 1);
+            total = total + pad + size;
+        }
+        return total;
+    }
+}

@@ -16,7 +16,7 @@ impl Interp {
         let e = self.new_env(-1);
         self.exec_block(e, root);
         if self.err != 0 {
-            s_write(bs_str(STR_PTR("lua error (line "), 17));
+            s_write(bs_str(STR_PTR("lua error (line "), 16));
             s_write(s_i64(self.curline));
             s_write(bs_str(STR_PTR("): "), 3));
             s_write(self.err);

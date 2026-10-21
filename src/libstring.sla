@@ -7,6 +7,7 @@
 @import "src/opcodes.sla"
 @import "src/libutil.sla"
 @import "src/patstr.sla"
+@import "src/libpack.sla"
 
 impl Interp {
     fn builtin_string(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
@@ -53,7 +54,12 @@ impl Interp {
             let out = bs_str(STR_PTR(""), 0);
             let i = 0;
             while i < (len(args) as i64) {
-                out = s_cat(out, s_char(self.bi_int(args[i], 0) as u8));
+                let c = self.bi_int(args[i], 0);
+                if c < 0 || c > 255 {
+                    self.fail_str(STR_PTR("value out of range"), 18);
+                    return Vec::new();
+                };
+                out = s_cat(out, s_char(c as u8));
                 i = i + 1;
             }
             return bs_one(v_str(out));
@@ -84,7 +90,8 @@ impl Interp {
             return bs_one(v_str(out));
         };
         if id == B_S_PACKSIZE {
-            return bs_one(v_int(8));
+            let f = v_to_string(bs_arg(args, 0));
+            return bs_one(v_int(self.packsize(f)));
         };
         if id == B_S_FIND {
             return self.pat_find_aux(true, args);
@@ -94,6 +101,12 @@ impl Interp {
         };
         if id == B_S_GSUB {
             return self.pat_gsub(args);
+        };
+        if id == B_S_GMATCH {
+            return self.pat_gmatch(args);
+        };
+        if id == B_S_GMATCH_NEXT {
+            return self.pat_gmatch_next(args);
         };
         if id == B_S_FORMAT {
             return bs_one(v_str(self.bi_format(args)));
@@ -216,7 +229,7 @@ impl Interp {
             return bs_one(v_nil());
         };
         if st.err != 0 {
-            self.fail_str(STR_PTR("malformed pattern"), 16);
+            self.fail_str(STR_PTR("malformed pattern"), 17);
             return Vec::new();
         };
         if find {
@@ -255,7 +268,7 @@ impl Interp {
             };
             let k = i + 1;
             if k >= rl {
-                self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 39);
+                self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 40);
                 return buf;
             };
             let d = s_byte(repl, k as u64);
@@ -273,7 +286,7 @@ impl Interp {
                             buf.push(v_str(cap.s));
                         };
                     } else {
-                        self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 39);
+                        self.fail_str(STR_PTR("invalid use of '%' in replacement string"), 40);
                         return buf;
                     };
                 };
@@ -297,7 +310,7 @@ impl Interp {
             buf.push(v_str(s_f64(v.f)));
             return buf;
         };
-        self.fail_str(STR_PTR("invalid replacement value"), 26);
+        self.fail_str(STR_PTR("invalid replacement value"), 25);
         return buf;
     }
 
@@ -328,6 +341,74 @@ impl Interp {
         };
         let rs = v_to_string(repl);
         return (self.pat_add_s(st, rs, s, e), true);
+    }
+
+    fn pat_gmatch(&self, args: &Vec<Value>) -> Vec<Value> {
+        let s = v_to_string(bs_arg(args, 0));
+        let p = v_to_string(bs_arg(args, 1));
+        let ls = s_len(s) as i64;
+        let init = 1;
+        if len(args) > 2 {
+            init = self.bi_int(bs_arg(args, 2), 1);
+        };
+        let pos = self.pat_posrelat(init, ls);
+        let init0 = 0;
+        if pos >= 1 {
+            init0 = pos - 1;
+        };
+        if init0 > ls {
+            init0 = ls;
+        };
+        let st = self.new_table();
+        self.table_set_str(st, istr(STR_PTR("s"), 1), v_str(s));
+        self.table_set_str(st, istr(STR_PTR("p"), 1), v_str(p));
+        self.table_set_str(st, istr(STR_PTR("pos"), 3), v_int(init0));
+        self.table_set_str(st, istr(STR_PTR("last"), 4), v_int(0 - 1));
+        let r = Vec::new();
+        r.push(v_builtin(B_S_GMATCH_NEXT));
+        r.push(v_table(st));
+        r.push(v_int(0));
+        return r;
+    }
+
+    fn pat_gmatch_next(&self, args: &Vec<Value>) -> Vec<Value> {
+        let stv = bs_arg(args, 0);
+        if stv.tag != VT_TABLE {
+            return Vec::new();
+        };
+        let sv = self.table_get_str(stv.i, istr(STR_PTR("s"), 1));
+        let pv = self.table_get_str(stv.i, istr(STR_PTR("p"), 1));
+        let posv = self.table_get_str(stv.i, istr(STR_PTR("pos"), 3));
+        let lastv = self.table_get_str(stv.i, istr(STR_PTR("last"), 4));
+        let ls = s_len(sv.s) as i64;
+        let st = pat_state_new(sv.s, pv.s);
+        let src = posv.i;
+        let last = lastv.i;
+        let going = true;
+        let found = 0;
+        while going {
+            st.level = 0;
+            st.depth = PAT_MAXCCALLS;
+            let e = pat_match(&st, src, 0);
+            if e >= 0 && e != last {
+                self.table_set_str(stv.i, istr(STR_PTR("pos"), 3), v_int(e));
+                self.table_set_str(stv.i, istr(STR_PTR("last"), 4), v_int(e));
+                st.mstart = src;
+                st.mend = e;
+                found = 1;
+                going = false;
+                continue;
+            };
+            src = src + 1;
+            if src > ls {
+                going = false;
+                continue;
+            };
+        }
+        if found == 0 {
+            return Vec::new();
+        };
+        return pat_push_captures(&st, st.mstart, st.mend, true);
     }
 
     fn pat_gsub(&self, args: &Vec<Value>) -> Vec<Value> {

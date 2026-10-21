@@ -212,16 +212,16 @@ fn v_to_string(v: Value) -> u64 {
         return v.s;
     };
     if v.tag == VT_TABLE {
-        return s_from(STR_PTR("table: 0x0"), 11);
+        return s_from(STR_PTR("table: 0x0"), 10);
     };
     if v.tag == VT_FUNC || v.tag == VT_BUILTIN {
-        return s_from(STR_PTR("function: 0x0"), 14);
+        return s_from(STR_PTR("function: 0x0"), 13);
     };
     if v.tag == VT_THREAD {
         return s_from(STR_PTR("thread: 0x0"), 11);
     };
     if v.tag == VT_USERDATA {
-        return s_from(STR_PTR("userdata: 0x0"), 14);
+        return s_from(STR_PTR("userdata: 0x0"), 13);
     };
     return s_from(STR_PTR("?"), 1);
 }

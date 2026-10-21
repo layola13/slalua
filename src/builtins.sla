@@ -89,7 +89,7 @@ impl Interp {
         let preload = self.new_table();
         self.table_set_str(pkg, bs_str(STR_PTR("loaded"), 6), v_table(loaded));
         self.table_set_str(pkg, bs_str(STR_PTR("preload"), 7), v_table(preload));
-        self.table_set_str(pkg, bs_str(STR_PTR("path"), 4), v_str(bs_str(STR_PTR("../lua/testes/?.lua"), 21)));
+        self.table_set_str(pkg, bs_str(STR_PTR("path"), 4), v_str(bs_str(STR_PTR("../lua/testes/?.lua"), 19)));
         self.table_set_str(pkg, bs_str(STR_PTR("cpath"), 5), v_str(bs_str(STR_PTR(""), 0)));
         self.table_set_str(pkg, bs_str(STR_PTR("config"), 6), v_str(bs_str(STR_PTR("/\n;\n?\n!\n-\n"), 10)));
         self.table_set_str(self.globals, bs_str(STR_PTR("package"), 7), v_table(pkg));
@@ -180,7 +180,7 @@ impl Interp {
         };
         if id == B_TYPE {
             if len(args) < 1 {
-                self.fail_str(STR_PTR("bad argument #1 to 'type' (value expected)"), 44);
+                self.fail_str(STR_PTR("bad argument #1 to 'type' (value expected)"), 42);
                 return Vec::new();
             };
             return bs_one(v_str(v_type_name(bs_arg(&args, 0))));
@@ -199,7 +199,7 @@ impl Interp {
             if v_truthy(a) {
                 return bs_copy(&args);
             };
-            let m = v_str(bs_str(STR_PTR("assertion failed!"), 16));
+            let m = v_str(bs_str(STR_PTR("assertion failed!"), 17));
             if len(args) > 1 {
                 m = bs_arg(&args, 1);
             };
@@ -302,7 +302,7 @@ impl Interp {
             let t = bs_arg(&args, 0);
             let k = bs_arg(&args, 1);
             if t.tag != VT_TABLE {
-                self.fail_str(STR_PTR("bad argument to 'next'"), 23);
+                self.fail_str(STR_PTR("bad argument to 'next'"), 22);
                 return Vec::new();
             };
             if k.tag != VT_NIL {
@@ -440,13 +440,13 @@ impl Interp {
         if sv.tag != VT_STR {
             let r = Vec::new();
             r.push(v_nil());
-            r.push(v_str(bs_str(STR_PTR("bad argument to 'load'"), 23)));
+            r.push(v_str(bs_str(STR_PTR("bad argument to 'load'"), 22)));
             return r;
         };
         let lx = lex_source(sv.s);
         let p = parse_tokens_base(lx, len(self.nodes) as i64, len(self.lists) as i64);
         if p.err != 0 {
-            let msg = s_cat(bs_str(STR_PTR("syntax error near line "), 25), s_i64(p.errline));
+            let msg = s_cat(bs_str(STR_PTR("syntax error near line "), 23), s_i64(p.errline));
             if p.errstr != 0 {
                 msg = p.errstr;
             };
@@ -468,6 +468,13 @@ impl Interp {
             j = j + 1;
         }
         return bs_one(v_func(self.new_func(Vec::new(), p.root, 1, 0, -1)));
+    }
+
+    fn v_coerce_num(&self, v: Value) -> Value {
+        if v.tag == VT_STR {
+            return self.bi_tonumber(v);
+        };
+        return v;
     }
 
     fn bi_tonumber(&self, v: Value) -> Value {
@@ -512,7 +519,10 @@ impl Interp {
         while i < n {
             let c = s_byte(t, i);
             if c < 48 || c > 57 {
-                return v_num(SLA_PARSE_F64(t));
+                if s_num_valid(t) {
+                    return v_num(SLA_PARSE_F64(t));
+                };
+                return v_nil();
             };
             val = val * 10 + (c as i64) - 48;
             digits = digits + 1;

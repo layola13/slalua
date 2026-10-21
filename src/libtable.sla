@@ -36,7 +36,7 @@ impl Interp {
             return r;
         };
         if id == B_CORO_UNSUPPORTED {
-            self.fail_str(STR_PTR("coroutine support is not implemented"), 35);
+            self.fail_str(STR_PTR("coroutine support is not implemented"), 36);
             return Vec::new();
         };
         if id == B_IO_WRITE {
@@ -48,7 +48,7 @@ impl Interp {
             return Vec::new();
         };
         if id == B_IO_UNSUPPORTED {
-            self.fail_str(STR_PTR("io library is not implemented"), 28);
+            self.fail_str(STR_PTR("io library is not implemented"), 29);
             return Vec::new();
         };
         if id == B_DBG_INFO {
@@ -72,15 +72,15 @@ impl Interp {
                 nrec = self.bi_int(bs_arg(args, 1), 0);
             };
             if narr < 0 || narr > 2147483647 {
-                self.fail_str(STR_PTR("bad argument #1 to 'create' (out of range)"), 44);
+                self.fail_str(STR_PTR("bad argument #1 to 'create' (out of range)"), 42);
                 return Vec::new();
             };
             if nrec < 0 || nrec > 2147483647 {
-                self.fail_str(STR_PTR("bad argument #2 to 'create' (out of range)"), 44);
+                self.fail_str(STR_PTR("bad argument #2 to 'create' (out of range)"), 42);
                 return Vec::new();
             };
             if narr + nrec > 2147483647 {
-                self.fail_str(STR_PTR("table overflow"), 13);
+                self.fail_str(STR_PTR("table overflow"), 14);
                 return Vec::new();
             };
             if narr + nrec > 0 {
@@ -124,7 +124,7 @@ impl Interp {
         if id == B_T_SORT {
             let t = bs_arg(args, 0);
             if t.tag != VT_TABLE {
-                self.fail_str(STR_PTR("bad argument #1 to 'sort' (table expected)"), 43);
+                self.fail_str(STR_PTR("bad argument #1 to 'sort' (table expected)"), 42);
                 return Vec::new();
             };
             let cmp = v_nil();
