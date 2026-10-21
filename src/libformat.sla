@@ -1,4 +1,30 @@
 impl Interp {
+    fn tostring_value(&self, v: Value) -> u64 {
+        let mt = self.metatable_of(v);
+        if mt >= 0 {
+            let h = self.table_get_str(mt, s_from(STR_PTR("__tostring"), 10));
+            if h.tag != VT_NIL {
+                let cargs = Vec::new();
+                cargs.push(v);
+                let out = self.call_value(h, cargs);
+                if self.err != 0 {
+                    return s_from(STR_PTR(""), 0);
+                };
+                if len(out) > 0 && out[0].tag == VT_STR {
+                    return out[0].s;
+                };
+                self.fail_str(STR_PTR("'__tostring' must return a string"), 33);
+                return s_from(STR_PTR(""), 0);
+            };
+            let nm = self.table_get_str(mt, s_from(STR_PTR("__name"), 6));
+            if nm.tag == VT_STR {
+                let b = s_cat(nm.s, s_from(STR_PTR(": 0x"), 4));
+                return s_cat(b, s_hex((v.tag * 1099511627776) + (v.i as u64)));
+            };
+        };
+        return v_to_string(v);
+    }
+
     fn bi_format(&self, args: &Vec<Value>) -> u64 {
         let f = v_to_string(bs_arg(args, 0));
         let n = s_len(f);
@@ -19,6 +45,7 @@ impl Interp {
             };
             let left = false;
             let zero = false;
+            let plus = false;
             let width: i64 = 0;
             let prec: i64 = -1;
             let scanning = true;
@@ -38,7 +65,12 @@ impl Interp {
                     i = i + 1;
                     continue;
                 };
-                if pc == 43 || pc == 32 || pc == 35 {
+                if pc == 43 {
+                    plus = true;
+                    i = i + 1;
+                    continue;
+                };
+                if pc == 32 || pc == 35 {
                     i = i + 1;
                     continue;
                 };
@@ -163,7 +195,7 @@ impl Interp {
                     item = s_cat(s_from(STR_PTR("0x"), 2), s_hex((v.tag * 1099511627776) + (v.i as u64)));
                 };
             } else if k == 115 {
-                item = v_to_string(v);
+                item = self.tostring_value(v);
                 if width > 0 || prec >= 0 {
                     let zi: u64 = 0;
                     while zi < s_len(item) {
@@ -179,12 +211,28 @@ impl Interp {
                 };
             } else if k == 100 || k == 105 {
                 item = s_i64(self.bi_int(v, 0));
+                if plus && (s_len(item) == 0 || s_byte(item, 0) != 45) {
+                    item = s_cat(s_from(STR_PTR("+"), 1), item);
+                };
             } else if k == 102 || k == 103 {
                 item = s_f64(v_as_num(v));
             } else if k == 99 {
                 item = s_char(self.bi_int(v, 0) as u8);
-            } else if k == 120 {
+            } else if k == 120 || k == 88 {
                 item = s_hex(self.bi_int(v, 0) as u64);
+                if k == 88 {
+                    let ub = bs_str(STR_PTR(""), 0);
+                    let ui: u64 = 0;
+                    while ui < s_len(item) {
+                        let uc = s_byte(item, ui);
+                        if uc >= 97 && uc <= 122 {
+                            uc = uc - 32;
+                        };
+                        ub = s_cat(ub, s_char(uc));
+                        ui = ui + 1;
+                    }
+                    item = ub;
+                };
             } else {
                 item = v_to_string(v);
             };
@@ -201,7 +249,10 @@ impl Interp {
                     sp = s_cat(sp, s_char(pch));
                     pi = pi + 1;
                 }
-                if left {
+                if zero && left == false && s_len(item) > 0 && (s_byte(item, 0) == 45 || s_byte(item, 0) == 43) {
+                    let rest = s_slice(item, 1, s_len(item) - 1);
+                    item = s_cat(s_char(s_byte(item, 0)), s_cat(sp, rest));
+                } else if left {
                     item = s_cat(item, sp);
                 } else {
                     item = s_cat(sp, item);

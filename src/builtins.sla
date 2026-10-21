@@ -210,7 +210,7 @@ impl Interp {
             if self.io_is_file(tv) {
                 return bs_one(v_str(self.io_file_string(tv.i)));
             };
-            return bs_one(v_str(v_to_string(tv)));
+            return bs_one(v_str(self.tostring_value(tv)));
         };
         if id == B_TONUMBER {
             if len(args) > 1 {
