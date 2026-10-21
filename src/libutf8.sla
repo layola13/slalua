@@ -315,16 +315,16 @@ impl Interp {
 
     fn utf8_codes_next(&self, args: &Vec<Value>) -> Vec<Value> {
         let s = v_to_string(bs_arg(args, 0));
-        let len = s_len(s) as i64;
+        let len = s_len(s);
         let mut_n = 0;
         if len(args) > 1 {
             mut_n = self.bi_int(bs_arg(args, 1), 0);
         };
-        let n = mut_n;
+        let n = mut_n as u64;
         if n < len {
             let q = n;
             while q < len {
-                if utf8_iscont(s_byte(s, q as u64) as i64) == false {
+                if utf8_iscont(s_byte(s, q) as i64) == false {
                     break;
                 };
                 q = q + 1;
@@ -332,13 +332,19 @@ impl Interp {
             if q >= len {
                 return Vec::new();
             };
-            let (nxt, cp) = utf8_decode(s, len, q, true);
+            let (nxt, cp) = utf8_decode(s, len as i64, q as i64, true);
             if nxt < 0 {
                 self.fail_str(STR_PTR("invalid UTF-8 code"), 18);
                 return Vec::new();
             };
+            if (nxt as u64) < len {
+                if utf8_iscont(s_byte(s, nxt as u64) as i64) {
+                    self.fail_str(STR_PTR("invalid UTF-8 code"), 18);
+                    return Vec::new();
+                };
+            };
             let r = Vec::new();
-            r.push(v_int(q + 1));
+            r.push(v_int((q + 1) as i64));
             r.push(v_int(cp));
             return r;
         };

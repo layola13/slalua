@@ -111,7 +111,7 @@ fn s_utf8_esc(cp: i64) -> u64 {
     if cp < 128 {
         return s_char(cp as u8);
     };
-    let out = bs_str(STR_PTR(""), 0);
+    let out = s_from(STR_PTR(""), 0);
     let x = cp;
     let mfb = 63;
     let going = true;

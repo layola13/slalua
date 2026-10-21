@@ -34,7 +34,7 @@ fn pat_state_new(src: u64, pat: u64) -> PatState {
         mstart: -1,
         mend: -1,
         err: 0,
-        errnum: 0,
+        errnum: -1,
         cap_init: Vec::new(),
         cap_len: Vec::new(),
     };
@@ -313,6 +313,11 @@ fn pat_match_capture(st: &PatState, s: i64, l: i64) -> i64 {
         return -1;
     };
     let len = st.cap_len[l];
+    if len == -1 {
+        st.err = 1;
+        st.errnum = l + 1;
+        return -1;
+    };
     if len < 0 {
         return -1;
     };
@@ -445,6 +450,7 @@ fn pat_match(st: &PatState, s: i64, p: i64) -> i64 {
     st.depth = st.depth - 1;
     if st.depth <= 0 {
         st.err = 1;
+        st.errnum = -2;
         return -1;
     };
     let cur_s = s;

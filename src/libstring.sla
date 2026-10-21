@@ -9,6 +9,8 @@
 @import "src/patstr.sla"
 @import "src/libpack.sla"
 
+const MAXSSIZE: i64 = 9223372036854775807;
+
 impl Interp {
     fn builtin_string(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
         if id == B_S_LEN {
@@ -69,6 +71,14 @@ impl Interp {
             let n = self.bi_int(bs_arg(args, 1), 0);
             let sep = bs_str(STR_PTR(""), 0);
             if len(args) > 2 { sep = v_to_string(bs_arg(args, 2)); };
+            if n > 0 {
+                let l = s_len(s) as i64;
+                let lsep = s_len(sep) as i64;
+                if l + lsep > MAXSSIZE / n {
+                    self.fail_str(STR_PTR("resulting string too large"), 26);
+                    return Vec::new();
+                };
+            };
             let out = bs_str(STR_PTR(""), 0);
             let i: i64 = 0;
             while i < n {
@@ -284,6 +294,16 @@ impl Interp {
                             let e1 = s_from(STR_PTR("invalid capture index %"), 23);
                             let e2 = s_cat(e1, s_char(d));
                             self.fail_text(e2);
+                            return buf;
+                        };
+                        if idx < (len(st.cap_len) as i64) {
+                            if st.cap_len[idx] == -1 {
+                                st.err = 1;
+                                st.errnum = idx + 1;
+                            };
+                        };
+                        if st.err != 0 {
+                            self.fail_text(pat_err_msg(st));
                             return buf;
                         };
                         let cap = pat_one_capture(st, idx, s, e);

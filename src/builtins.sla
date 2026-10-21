@@ -231,7 +231,11 @@ impl Interp {
         };
         if id == B_ERROR {
             let m = bs_arg(&args, 0);
-            self.err = v_to_string(m);
+            if m.tag == VT_NIL {
+                self.err = bs_str(STR_PTR("<no error object>"), 17);
+            } else {
+                self.err = v_to_string(m);
+            };
             self.ctrl = CTL_ERROR;
             return Vec::new();
         };
