@@ -70,6 +70,7 @@ impl Interp {
         self.table_set_str(tt, bs_str(STR_PTR("concat"), 6), v_builtin(B_T_CONCAT));
         self.table_set_str(tt, bs_str(STR_PTR("pack"), 4), v_builtin(B_T_PACK));
         self.table_set_str(tt, bs_str(STR_PTR("unpack"), 6), v_builtin(B_T_UNPACK));
+        self.table_set_str(tt, bs_str(STR_PTR("create"), 6), v_builtin(B_T_CREATE));
         self.table_set_str(self.globals, bs_str(STR_PTR("table"), 5), v_table(tt));
         let mt = self.new_table();
         self.table_set_str(mt, bs_str(STR_PTR("floor"), 5), v_builtin(B_M_FLOOR));
@@ -297,7 +298,7 @@ impl Interp {
         if id >= B_S_LEN && id <= B_S_FIND {
             return self.builtin_string(id, &args);
         };
-        if (id >= B_T_INSERT && id <= B_T_UNPACK) || (id >= B_M_FLOOR && id <= B_M_FMOD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE {
+        if (id >= B_T_INSERT && id <= B_T_CREATE) || (id >= B_M_FLOOR && id <= B_M_FMOD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE {
             return self.builtin_aux(id, &args);
         };
         if id == B_GC {

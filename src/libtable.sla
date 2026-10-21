@@ -38,6 +38,10 @@ impl Interp {
             };
             return bs_one(v_str(v_to_string(m)));
         };
+        if id == B_T_CREATE {
+            let t = self.new_table();
+            return bs_one(v_table(t));
+        };
         if id == B_T_INSERT {
             let t = bs_arg(args, 0);
             let n = self.table_len(t.i);

@@ -201,9 +201,10 @@ Reproducers: the interpreter sources (`src/interp_expr.sla`).
 
 Status: documented behaviour.
 
-## D-009 Logical `&&` does not short-circuit
+## D-009 Logical `&&` / `||` do not short-circuit
 
-`&&` evaluates its right-hand side even when the left side is false. Bounds-
+`&&` and `||` evaluate their right-hand side even when the result is already
+decided by the left side. Bounds-
 checked indexing on the right therefore turns a guard into a runtime panic:
 
 ```sla
@@ -212,6 +213,9 @@ if len(v) > 0 && v[0] > 0 { ... }
 
 With an empty `v`, this reaches `v[0]` and aborts with `PANIC code=32`
 (out-of-bounds). Reproducer: `src/probe_and.sla`.
+
+This also breaks the Lua generic-for loop guard `if len(out) == 0 || out[0].tag
+== VT_NIL`: an empty result vector still evaluates `out[0]` and panics.
 
 Workaround: nest the tests instead of relying on short-circuit evaluation:
 

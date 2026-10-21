@@ -228,8 +228,16 @@ impl Interp {
         let i = 0;
         while i < (len(es) as i64) {
             if v_equal(es[i].key, key) {
-                let nv = value_new(val.tag, val.i, val.f, val.s);
-                self.tables[tid].entries[i].val = nv;
+                if val.tag == VT_NIL {
+                    let last = (len(es) as i64) - 1;
+                    if i != last {
+                        self.tables[tid].entries[i] = self.tables[tid].entries[last];
+                    };
+                    self.tables[tid].entries.pop();
+                } else {
+                    let nv = value_new(val.tag, val.i, val.f, val.s);
+                    self.tables[tid].entries[i].val = nv;
+                };
                 return;
             };
             i = i + 1;

@@ -317,7 +317,11 @@ impl Interp {
             two.push(state);
             two.push(ctl);
             let out = self.call_value(f, two);
-            if len(out) == 0 || out[0].tag == VT_NIL {
+            if len(out) == 0 {
+                going = false;
+                continue;
+            };
+            if out[0].tag == VT_NIL {
                 going = false;
                 continue;
             };
