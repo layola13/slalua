@@ -1,0 +1,40 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/string.sa"
+@import "sa_std/string.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/ptr.sa"
+@import "sa_std/fs.sa"
+@import "src/tok.sla"
+@import "src/rt.sa"
+@import "src/strutil.sla"
+@import "src/lexer.sla"
+@import "src/parser.sla"
+
+fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
+    let buf = sa_fs_read_file(path_ptr, path_len, 4194304);
+    switch buf {
+        0 => {
+            return 0;
+        },
+        default => {},
+    };
+    return buf;
+}
+
+fn main() -> i32 {
+    let path = "../lua/testes/literals.lua";
+    let src = read_text(STR_PTR(path), STR_LEN(path));
+    if src == 0 {
+        println("read failed");
+        return 1;
+    };
+    let data = SLA_FS_BUFFER_DATA(src);
+    let n = SLA_FS_BUFFER_LEN(src);
+    let text = s_from(data, n);
+    let lx = lex_source(text);
+    println("lex tokens={} err={} line={}", len(lx.toks), lx.err, lx.errline);
+    let p = parse_tokens(lx);
+    println("parse err={} line={} kind={} nodes={} lists={}", p.err, p.errline, p.errkind, len(p.nodes), len(p.lists));
+    let st = sa_fs_read_buffer_free(src);
+    return 0;
+}

@@ -1,0 +1,73 @@
+@import "sa_std/vec.sa"
+
+const NK_NIL: i64 = 1;
+const NK_TRUE: i64 = 2;
+const NK_FALSE: i64 = 3;
+const NK_INT: i64 = 4;
+const NK_NUM: i64 = 5;
+const NK_STR: i64 = 6;
+const NK_VARARG: i64 = 7;
+
+const NK_NAME: i64 = 10;
+const NK_INDEX: i64 = 11;
+const NK_CALL: i64 = 12;
+const NK_METHOD: i64 = 13;
+const NK_FUNC: i64 = 14;
+const NK_TABLE: i64 = 15;
+const NK_BIN: i64 = 16;
+const NK_UN: i64 = 17;
+const NK_PAREN: i64 = 18;
+const NK_FIELD: i64 = 20;
+
+const NK_LOCAL: i64 = 30;
+const NK_ASSIGN: i64 = 31;
+const NK_CALLSTAT: i64 = 32;
+const NK_DO: i64 = 33;
+const NK_WHILE: i64 = 34;
+const NK_REPEAT: i64 = 35;
+const NK_IF: i64 = 36;
+const NK_FOR_NUM: i64 = 37;
+const NK_FOR_IN: i64 = 38;
+const NK_FUNC_STMT: i64 = 39;
+const NK_LOCAL_FUNC: i64 = 40;
+const NK_RETURN: i64 = 41;
+const NK_BREAK: i64 = 42;
+const NK_GOTO: i64 = 43;
+const NK_LABEL: i64 = 44;
+const NK_EMPTY: i64 = 45;
+const NK_GLOBAL: i64 = 46;
+const NK_GLOBAL_FUNC: i64 = 47;
+
+struct Node {
+    kind: i64,
+    line: i64,
+    a: i64,
+    b: i64,
+    c: i64,
+    d: i64,
+    n: i64,
+    f: f64,
+    s: u64,
+}
+
+fn node_new(kind: i64, line: i64, a: i64, b: i64, c: i64, d: i64, n: i64, f: f64, s: u64) -> Node {
+    return Node {
+        kind: kind,
+        line: line,
+        a: a,
+        b: b,
+        c: c,
+        d: d,
+        n: n,
+        f: f,
+        s: s,
+    };
+}
+
+struct List {
+    items: Vec<i64>,
+}
+
+fn list_new() -> List {
+    return List { items: Vec::new() };
+}

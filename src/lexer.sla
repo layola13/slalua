@@ -536,6 +536,7 @@ fn lx_keyword(s: u64) -> i64 {
     if s_eq_lit(s, STR_PTR("false"), 5) { return KW_FALSE; };
     if s_eq_lit(s, STR_PTR("for"), 3) { return KW_FOR; };
     if s_eq_lit(s, STR_PTR("function"), 8) { return KW_FUNCTION; };
+    if s_eq_lit(s, STR_PTR("global"), 6) { return KW_GLOBAL; };
     if s_eq_lit(s, STR_PTR("goto"), 4) { return KW_GOTO; };
     if s_eq_lit(s, STR_PTR("if"), 2) { return KW_IF; };
     if s_eq_lit(s, STR_PTR("in"), 2) { return KW_IN; };

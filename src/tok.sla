@@ -60,6 +60,7 @@ const KW_THEN: i64 = 118;
 const KW_TRUE: i64 = 119;
 const KW_UNTIL: i64 = 120;
 const KW_WHILE: i64 = 121;
+const KW_GLOBAL: i64 = 122;
 
 struct Token {
     kind: i64,

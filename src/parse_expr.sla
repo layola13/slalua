@@ -1,0 +1,305 @@
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/parse_core.sla"
+@import "src/parse_stmt.sla"
+
+fn pe_is_unop(k: i64) -> bool {
+    return k == TK_SUB || k == KW_NOT || k == TK_HASH || k == TK_TILDE;
+}
+
+fn pe_is_binop(k: i64) -> bool {
+    if k == TK_ADD || k == TK_SUB || k == TK_MUL || k == TK_DIV {
+        return true;
+    };
+    if k == TK_IDIV || k == TK_MOD || k == TK_POW || k == TK_CONCAT {
+        return true;
+    };
+    if k == TK_AMP || k == TK_TILDE || k == TK_PIPE || k == TK_SHL || k == TK_SHR {
+        return true;
+    };
+    if k == TK_EQ || k == TK_NE || k == TK_LT || k == TK_LE || k == TK_GT || k == TK_GE {
+        return true;
+    };
+    return k == KW_AND || k == KW_OR;
+}
+
+fn pe_left_pri(k: i64) -> i64 {
+    if k == KW_OR {
+        return 1;
+    };
+    if k == KW_AND {
+        return 2;
+    };
+    if k == TK_LT || k == TK_LE || k == TK_GT || k == TK_GE || k == TK_EQ || k == TK_NE {
+        return 3;
+    };
+    if k == TK_PIPE {
+        return 4;
+    };
+    if k == TK_TILDE {
+        return 5;
+    };
+    if k == TK_AMP {
+        return 6;
+    };
+    if k == TK_SHL || k == TK_SHR {
+        return 7;
+    };
+    if k == TK_CONCAT {
+        return 8;
+    };
+    if k == TK_ADD || k == TK_SUB {
+        return 9;
+    };
+    if k == TK_MUL || k == TK_DIV || k == TK_IDIV || k == TK_MOD {
+        return 10;
+    };
+    if k == TK_POW {
+        return 12;
+    };
+    return 0;
+}
+
+fn pe_right_pri(k: i64) -> i64 {
+    if k == TK_CONCAT {
+        return 7;
+    };
+    if k == TK_POW {
+        return 11;
+    };
+    return pe_left_pri(k);
+}
+
+impl Parser {
+    fn parse_expr(&self) -> i64 {
+        return self.parse_subexpr(0);
+    }
+
+    fn parse_subexpr(&self, limit: i64) -> i64 {
+        let left = 0;
+        if pe_is_unop(self.kind()) {
+            let t = self.take();
+            let operand = self.parse_subexpr(11);
+            left = self.mk(NK_UN, t.line, operand, 0, 0, 0, t.kind, 0.0, 0);
+        } else {
+            left = self.parse_simple();
+        };
+        let going = true;
+        while going && self.err == 0 {
+            let k = self.kind();
+            if pe_is_binop(k) == false {
+                going = false;
+                continue;
+            };
+            if pe_left_pri(k) <= limit {
+                going = false;
+                continue;
+            };
+            let t = self.take();
+            let right = self.parse_subexpr(pe_right_pri(k));
+            left = self.mk(NK_BIN, t.line, left, right, 0, 0, t.kind, 0.0, 0);
+        }
+        return left;
+    }
+
+    fn parse_simple(&self) -> i64 {
+        let k = self.kind();
+        if k == KW_NIL {
+            let t = self.take();
+            return self.mk0(NK_NIL, t.line);
+        };
+        if k == KW_TRUE {
+            let t = self.take();
+            return self.mk0(NK_TRUE, t.line);
+        };
+        if k == KW_FALSE {
+            let t = self.take();
+            return self.mk0(NK_FALSE, t.line);
+        };
+        if k == TK_INT {
+            let t = self.take();
+            return self.mk_int(t.line, t.n);
+        };
+        if k == TK_NUM {
+            let t = self.take();
+            return self.mk_num(t.line, t.f);
+        };
+        if k == TK_STR {
+            let t = self.take();
+            return self.mk_str(t.line, t.s);
+        };
+        if k == TK_ELLIPSIS {
+            let t = self.take();
+            return self.mk0(NK_VARARG, t.line);
+        };
+        if k == KW_FUNCTION {
+            let t = self.take();
+            return self.parse_funcbody(0, t.line);
+        };
+        if k == TK_LBRACE {
+            return self.parse_table();
+        };
+        return self.parse_suffixed();
+    }
+
+    fn parse_primary(&self) -> i64 {
+        let t = self.cur();
+        if t.kind == TK_NAME {
+            self.take();
+            return self.mk_name(t.line, t.s);
+        };
+        if t.kind == TK_LPAREN {
+            self.take();
+            let e = self.parse_expr();
+            self.expect(TK_RPAREN);
+            return self.mk1(NK_PAREN, t.line, e);
+        };
+        self.fail(TK_NAME);
+        self.take();
+        return self.mk0(NK_NIL, t.line);
+    }
+
+    fn parse_suffixed(&self) -> i64 {
+        let e = self.parse_primary();
+        let going = true;
+        while going && self.err == 0 {
+            let k = self.kind();
+            if k == TK_DOT {
+                let t = self.take();
+                let n = self.expect(TK_NAME);
+                e = self.mk(NK_INDEX, t.line, e, 0, 0, 0, 0, 0.0, n.s);
+                continue;
+            };
+            if k == TK_LBRACK {
+                let t = self.take();
+                let key = self.parse_expr();
+                self.expect(TK_RBRACK);
+                e = self.mk(NK_INDEX, t.line, e, key, 0, 0, 0, 0.0, 0);
+                continue;
+            };
+            if k == TK_COLON {
+                let t = self.take();
+                let n = self.expect(TK_NAME);
+                let args = self.parse_args();
+                e = self.mk(NK_METHOD, t.line, e, args, 0, 0, 0, 0.0, n.s);
+                continue;
+            };
+            if k == TK_LPAREN || k == TK_STR || k == TK_LBRACE {
+                let t = self.cur();
+                let args = self.parse_args();
+                e = self.mk(NK_CALL, t.line, e, args, 0, 0, 0, 0.0, 0);
+                continue;
+            };
+            going = false;
+        }
+        return e;
+    }
+
+    fn parse_args(&self) -> i64 {
+        let lid = self.new_list();
+        if self.accept(TK_LPAREN) {
+            if self.at(TK_RPAREN) {
+                self.take();
+                return lid;
+            };
+            self.list_add(lid, self.parse_expr());
+            while self.accept(TK_COMMA) {
+                self.list_add(lid, self.parse_expr());
+            }
+            self.expect(TK_RPAREN);
+            return lid;
+        };
+        if self.at(TK_LBRACE) {
+            self.list_add(lid, self.parse_table());
+            return lid;
+        };
+        if self.at(TK_STR) {
+            let t = self.take();
+            self.list_add(lid, self.mk_str(t.line, t.s));
+            return lid;
+        };
+        self.fail(TK_LPAREN);
+        return lid;
+    }
+
+    fn parse_table(&self) -> i64 {
+        let t = self.expect(TK_LBRACE);
+        let lid = self.new_list();
+        let going = true;
+        while going && self.err == 0 {
+            if self.at(TK_RBRACE) {
+                going = false;
+                continue;
+            };
+            let line = self.cur().line;
+            let f = 0;
+            if self.accept(TK_LBRACK) {
+                let key = self.parse_expr();
+                self.expect(TK_RBRACK);
+                self.expect(TK_ASSIGN);
+                let val = self.parse_expr();
+                f = self.mk(NK_FIELD, line, key, val, 0, 0, 1, 0.0, 0);
+            };
+            if f == 0 && self.at(TK_NAME) && self.peek_kind(1) == TK_ASSIGN {
+                let n = self.take();
+                self.take();
+                let val = self.parse_expr();
+                f = self.mk(NK_FIELD, line, 0, val, 0, 0, 2, 0.0, n.s);
+            };
+            if f == 0 {
+                let val = self.parse_expr();
+                f = self.mk(NK_FIELD, line, 0, val, 0, 0, 0, 0.0, 0);
+            };
+            self.list_add(lid, f);
+            if self.accept(TK_COMMA) {
+                continue;
+            };
+            if self.accept(TK_SEMI) {
+                continue;
+            };
+            going = false;
+        }
+        self.expect(TK_RBRACE);
+        return self.mk1(NK_TABLE, t.line, lid);
+    }
+
+    fn parse_funcbody(&self, has_self: i64, line: i64) -> i64 {
+        self.expect(TK_LPAREN);
+        let params = self.new_list();
+        let vararg = 0;
+        if self.at(TK_RPAREN) == false {
+            if self.accept(TK_ELLIPSIS) {
+                vararg = 1;
+                if self.at(TK_NAME) {
+                    let vn = self.take();
+                    self.list_add(params, self.mk(NK_NAME, vn.line, 0, 0, 0, 0, 4, 0.0, vn.s));
+                };
+            } else {
+                let n = self.expect(TK_NAME);
+                self.list_add(params, self.mk_name(n.line, n.s));
+                let more = true;
+                while more && self.err == 0 {
+                    if self.accept(TK_COMMA) == false {
+                        more = false;
+                        continue;
+                    };
+                    if self.accept(TK_ELLIPSIS) {
+                        vararg = 1;
+                        if self.at(TK_NAME) {
+                            let vn = self.take();
+                            self.list_add(params, self.mk(NK_NAME, vn.line, 0, 0, 0, 0, 4, 0.0, vn.s));
+                        };
+                        more = false;
+                        continue;
+                    };
+                    let p = self.expect(TK_NAME);
+                    self.list_add(params, self.mk_name(p.line, p.s));
+                }
+            };
+        };
+        self.expect(TK_RPAREN);
+        let body = self.parse_block();
+        self.expect(KW_END);
+        return self.mk(NK_FUNC, line, params, body, 0, has_self, vararg, 0.0, 0);
+    }
+}

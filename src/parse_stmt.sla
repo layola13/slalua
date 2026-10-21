@@ -1,0 +1,310 @@
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/strutil.sla"
+@import "src/parse_core.sla"
+@import "src/parse_expr.sla"
+
+fn ps_block_end(k: i64) -> bool {
+    if k == TK_EOF || k == KW_END || k == KW_ELSE || k == KW_ELSEIF || k == KW_UNTIL {
+        return true;
+    };
+    return false;
+}
+
+impl Parser {
+    fn parse_exprlist(&self) -> i64 {
+        let lid = self.new_list();
+        self.list_add(lid, self.parse_expr());
+        while self.accept(TK_COMMA) {
+            self.list_add(lid, self.parse_expr());
+        }
+        return lid;
+    }
+
+    fn parse_block(&self) -> i64 {
+        let lid = self.new_list();
+        let going = true;
+        while going && self.err == 0 {
+            let k = self.kind();
+            if ps_block_end(k) {
+                going = false;
+                continue;
+            };
+            if k == KW_RETURN {
+                let st = self.parse_return();
+                self.list_add(lid, st);
+                going = false;
+                continue;
+            };
+            let st = self.parse_statement();
+            if st != 0 {
+                self.list_add(lid, st);
+            };
+        }
+        return lid;
+    }
+
+    fn parse_return(&self) -> i64 {
+        let t = self.take();
+        let lid = self.new_list();
+        if ps_block_end(self.kind()) == false && self.at(TK_SEMI) == false {
+            self.list_add(lid, self.parse_expr());
+            while self.accept(TK_COMMA) {
+                self.list_add(lid, self.parse_expr());
+            }
+        };
+        self.accept(TK_SEMI);
+        let n = self.list_len(lid);
+        return self.mk(NK_RETURN, t.line, lid, 0, 0, 0, n, 0.0, 0);
+    }
+
+    fn parse_attrib(&self) -> i64 {
+        if self.accept(TK_LT) == false {
+            return 0;
+        };
+        let n = self.expect(TK_NAME);
+        self.expect(TK_GT);
+        if s_eq_lit(n.s, STR_PTR("const"), 5) {
+            return 1;
+        };
+        if s_eq_lit(n.s, STR_PTR("close"), 5) {
+            return 2;
+        };
+        return 1;
+    }
+
+    fn parse_statement(&self) -> i64 {
+        let k = self.kind();
+        if k == TK_SEMI {
+            self.take();
+            return 0;
+        };
+        if k == KW_IF {
+            return self.parse_if();
+        };
+        if k == KW_WHILE {
+            return self.parse_while();
+        };
+        if k == KW_REPEAT {
+            return self.parse_repeat();
+        };
+        if k == KW_DO {
+            return self.parse_do();
+        };
+        if k == KW_FOR {
+            return self.parse_for();
+        };
+        if k == KW_FUNCTION {
+            return self.parse_func_stmt();
+        };
+        if k == KW_LOCAL {
+            return self.parse_local();
+        };
+        if k == KW_GLOBAL {
+            return self.parse_global();
+        };
+        if k == KW_RETURN {
+            return self.parse_return();
+        };
+        if k == KW_BREAK {
+            let t = self.take();
+            return self.mk0(NK_BREAK, t.line);
+        };
+        if k == KW_GOTO {
+            let t = self.take();
+            let n = self.expect(TK_NAME);
+            return self.mk(NK_GOTO, t.line, 0, 0, 0, 0, 0, 0.0, n.s);
+        };
+        if k == TK_COLONCOLON {
+            let t = self.take();
+            let n = self.expect(TK_NAME);
+            self.expect(TK_COLONCOLON);
+            return self.mk(NK_LABEL, t.line, 0, 0, 0, 0, 0, 0.0, n.s);
+        };
+        return self.parse_assign_or_call();
+    }
+
+    fn parse_assign_or_call(&self) -> i64 {
+        let line = self.cur().line;
+        let first = self.parse_suffixed();
+        if self.at(TK_ASSIGN) == false && self.at(TK_COMMA) == false {
+            return self.mk1(NK_CALLSTAT, line, first);
+        };
+        let vars = self.new_list();
+        self.list_add(vars, first);
+        while self.accept(TK_COMMA) {
+            self.list_add(vars, self.parse_suffixed());
+        }
+        self.expect(TK_ASSIGN);
+        let exps = self.parse_exprlist();
+        return self.mk(NK_ASSIGN, line, vars, exps, 0, 0, 0, 0.0, 0);
+    }
+
+    fn parse_if(&self) -> i64 {
+        let t = self.take();
+        let cond = self.parse_expr();
+        self.expect(KW_THEN);
+        let thenb = self.parse_block();
+        let elseb = self.parse_if_else();
+        self.expect(KW_END);
+        return self.mk(NK_IF, t.line, cond, thenb, elseb, 0, 0, 0.0, 0);
+    }
+
+    fn parse_if_else(&self) -> i64 {
+        if self.accept(KW_ELSEIF) {
+            let line = self.cur().line;
+            let cond = self.parse_expr();
+            self.expect(KW_THEN);
+            let thenb = self.parse_block();
+            let elseb = self.parse_if_else();
+            let nested = self.mk(NK_IF, line, cond, thenb, elseb, 0, 0, 0.0, 0);
+            let lid = self.new_list();
+            self.list_add(lid, nested);
+            return lid;
+        };
+        if self.accept(KW_ELSE) {
+            return self.parse_block();
+        };
+        return 0;
+    }
+
+    fn parse_while(&self) -> i64 {
+        let t = self.take();
+        let cond = self.parse_expr();
+        self.expect(KW_DO);
+        let body = self.parse_block();
+        self.expect(KW_END);
+        return self.mk(NK_WHILE, t.line, cond, body, 0, 0, 0, 0.0, 0);
+    }
+
+    fn parse_repeat(&self) -> i64 {
+        let t = self.take();
+        let body = self.parse_block();
+        self.expect(KW_UNTIL);
+        let cond = self.parse_expr();
+        return self.mk(NK_REPEAT, t.line, body, cond, 0, 0, 0, 0.0, 0);
+    }
+
+    fn parse_do(&self) -> i64 {
+        let t = self.take();
+        let body = self.parse_block();
+        self.expect(KW_END);
+        return self.mk1(NK_DO, t.line, body);
+    }
+
+
+    fn parse_global(&self) -> i64 {
+        let t = self.take();
+        if self.accept(KW_FUNCTION) {
+            let n = self.expect(TK_NAME);
+            let f = self.parse_funcbody(0, t.line);
+            return self.mk(NK_GLOBAL_FUNC, t.line, f, 0, 0, 0, 0, 0.0, n.s);
+        };
+        let defattr = self.parse_attrib();
+        if self.accept(TK_MUL) {
+            return self.mk(NK_GLOBAL, t.line, 0, 0, 0, 0, defattr + 4, 0.0, 0);
+        };
+        let names = self.new_list();
+        let going = true;
+        while going && self.err == 0 {
+            let n = self.expect(TK_NAME);
+            let at = self.parse_attrib();
+            let k = at;
+            if k == 0 {
+                k = defattr;
+            };
+            self.list_add(names, self.mk(NK_NAME, n.line, 0, 0, 0, 0, k, 0.0, n.s));
+            if self.accept(TK_COMMA) == false {
+                going = false;
+            };
+        }
+        let exps = self.new_list();
+        if self.accept(TK_ASSIGN) {
+            self.list_add(exps, self.parse_expr());
+            while self.accept(TK_COMMA) {
+                self.list_add(exps, self.parse_expr());
+            }
+        };
+        return self.mk(NK_GLOBAL, t.line, names, exps, 0, 0, defattr, 0.0, 0);
+    }
+
+    fn parse_for(&self) -> i64 {
+        let t = self.take();
+        let name = self.expect(TK_NAME);
+        if self.accept(TK_ASSIGN) {
+            let start = self.parse_expr();
+            self.expect(TK_COMMA);
+            let limit = self.parse_expr();
+            let step = 0;
+            if self.accept(TK_COMMA) {
+                step = self.parse_expr();
+            };
+            self.expect(KW_DO);
+            let body = self.parse_block();
+            self.expect(KW_END);
+            return self.mk(NK_FOR_NUM, t.line, start, limit, step, body, 0, 0.0, name.s);
+        };
+        let names = self.new_list();
+        self.list_add(names, self.mk_name(name.line, name.s));
+        while self.accept(TK_COMMA) {
+            let n = self.expect(TK_NAME);
+            self.list_add(names, self.mk_name(n.line, n.s));
+        }
+        self.expect(KW_IN);
+        let exps = self.parse_exprlist();
+        self.expect(KW_DO);
+        let body = self.parse_block();
+        self.expect(KW_END);
+        return self.mk(NK_FOR_IN, t.line, 0, names, exps, body, 0, 0.0, 0);
+    }
+
+    fn parse_func_stmt(&self) -> i64 {
+        let t = self.take();
+        let n = self.expect(TK_NAME);
+        let target = self.mk_name(n.line, n.s);
+        while self.accept(TK_DOT) {
+            let p = self.expect(TK_NAME);
+            target = self.mk(NK_INDEX, t.line, target, 0, 0, 0, 0, 0.0, p.s);
+        }
+        let has_self = 0;
+        if self.accept(TK_COLON) {
+            let p = self.expect(TK_NAME);
+            target = self.mk(NK_INDEX, t.line, target, 0, 0, 0, 0, 0.0, p.s);
+            has_self = 1;
+        };
+        let f = self.parse_funcbody(has_self, t.line);
+        return self.mk2(NK_FUNC_STMT, t.line, target, f);
+    }
+
+    fn parse_local(&self) -> i64 {
+        let t = self.take();
+        if self.accept(KW_FUNCTION) {
+            let n = self.expect(TK_NAME);
+            let f = self.parse_funcbody(0, t.line);
+            return self.mk(NK_LOCAL_FUNC, t.line, f, 0, 0, 0, 0, 0.0, n.s);
+        };
+        let defattr = self.parse_attrib();
+        let names = self.new_list();
+        let going = true;
+        while going && self.err == 0 {
+            let n = self.expect(TK_NAME);
+            let at = self.parse_attrib();
+            let attr = at;
+            if attr == 0 {
+                attr = defattr;
+            };
+            self.list_add(names, self.mk(NK_NAME, n.line, 0, 0, 0, 0, attr, 0.0, n.s));
+            if self.accept(TK_COMMA) == false {
+                going = false;
+            };
+        }
+        let exps = self.new_list();
+        if self.accept(TK_ASSIGN) {
+            self.list_add(exps, self.parse_expr());
+            while self.accept(TK_COMMA) {
+                self.list_add(exps, self.parse_expr());
+            }
+        };
+        return self.mk(NK_LOCAL, t.line, names, exps, 0, 0, 0, 0.0, 0);
+    }
+}

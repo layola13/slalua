@@ -1,0 +1,21 @@
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/lexer.sla"
+@import "src/parse_core.sla"
+@import "src/parse_expr.sla"
+@import "src/parse_stmt.sla"
+
+impl Parser {
+    fn parse_program(&self) -> void {
+        self.root = self.parse_block();
+        if self.at(TK_EOF) == false {
+            self.fail(TK_EOF);
+        };
+    }
+}
+
+fn parse_tokens(lx: Lexer) -> Parser {
+    let p = parser_new(lx);
+    p.parse_program();
+    return p;
+}

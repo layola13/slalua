@@ -1,0 +1,141 @@
+@import "sa_std/vec.sa"
+@import "src/tok.sla"
+@import "src/ast.sla"
+@import "src/lexer.sla"
+
+struct Parser {
+    lx: Lexer,
+    pos: i64,
+    nodes: Vec<Node>,
+    lists: Vec<List>,
+    err: i64,
+    errline: i64,
+    errkind: i64,
+    root: i64,
+}
+
+fn parser_new(lx: Lexer) -> Parser {
+    return Parser {
+        lx: lx,
+        pos: 0,
+        nodes: Vec::new(),
+        lists: Vec::new(),
+        err: 0,
+        errline: 0,
+        errkind: 0,
+        root: 0,
+    };
+}
+
+impl Parser {
+    fn cur(&self) -> Token {
+        if self.pos >= (len(self.lx.toks) as i64) {
+            return self.lx.toks[len(self.lx.toks) - 1];
+        };
+        return self.lx.toks[self.pos];
+    }
+
+    fn kind(&self) -> i64 {
+        return self.cur().kind;
+    }
+
+    fn peek_kind(&self, off: i64) -> i64 {
+        let i = self.pos + off;
+        if i >= (len(self.lx.toks) as i64) {
+            return TK_EOF;
+        };
+        return self.lx.toks[i].kind;
+    }
+
+    fn at(&self, k: i64) -> bool {
+        return self.kind() == k;
+    }
+
+    fn take(&self) -> Token {
+        let t = self.cur();
+        if self.pos < (len(self.lx.toks) as i64) - 1 {
+            self.pos = self.pos + 1;
+        };
+        return t;
+    }
+
+    fn accept(&self, k: i64) -> bool {
+        if self.at(k) {
+            self.take();
+            return true;
+        };
+        return false;
+    }
+
+    fn fail(&self, expected: i64) -> void {
+        if self.err == 0 {
+            self.err = 1;
+            self.errkind = expected;
+            self.errline = self.cur().line;
+        };
+    }
+
+    fn expect(&self, k: i64) -> Token {
+        if self.at(k) {
+            return self.take();
+        };
+        self.fail(k);
+        return self.cur();
+    }
+
+    fn mk(&self, kind: i64, line: i64, a: i64, b: i64, c: i64, d: i64, n: i64, f: f64, s: u64) -> i64 {
+        let id = len(self.nodes) as i64;
+        self.nodes.push(node_new(kind, line, a, b, c, d, n, f, s));
+        return id;
+    }
+
+    fn mk0(&self, kind: i64, line: i64) -> i64 {
+        return self.mk(kind, line, 0, 0, 0, 0, 0, 0.0, 0);
+    }
+
+    fn mk1(&self, kind: i64, line: i64, a: i64) -> i64 {
+        return self.mk(kind, line, a, 0, 0, 0, 0, 0.0, 0);
+    }
+
+    fn mk2(&self, kind: i64, line: i64, a: i64, b: i64) -> i64 {
+        return self.mk(kind, line, a, b, 0, 0, 0, 0.0, 0);
+    }
+
+    fn mk3(&self, kind: i64, line: i64, a: i64, b: i64, c: i64) -> i64 {
+        return self.mk(kind, line, a, b, c, 0, 0, 0.0, 0);
+    }
+
+    fn mk4(&self, kind: i64, line: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
+        return self.mk(kind, line, a, b, c, d, 0, 0.0, 0);
+    }
+
+    fn mk_name(&self, line: i64, s: u64) -> i64 {
+        return self.mk(NK_NAME, line, 0, 0, 0, 0, 0, 0.0, s);
+    }
+
+    fn mk_int(&self, line: i64, v: i64) -> i64 {
+        return self.mk(NK_INT, line, 0, 0, 0, 0, v, 0.0, 0);
+    }
+
+    fn mk_num(&self, line: i64, v: f64) -> i64 {
+        return self.mk(NK_NUM, line, 0, 0, 0, 0, 0, v, 0);
+    }
+
+    fn mk_str(&self, line: i64, s: u64) -> i64 {
+        return self.mk(NK_STR, line, 0, 0, 0, 0, 0, 0.0, s);
+    }
+
+    fn new_list(&self) -> i64 {
+        let id = len(self.lists) as i64;
+        self.lists.push(list_new());
+        return id;
+    }
+
+    fn list_add(&self, lid: i64, id: i64) -> void {
+        self.lists[lid].items.push(id);
+    }
+
+    fn list_len(&self, lid: i64) -> i64 {
+        return len(self.lists[lid].items) as i64;
+    }
+}

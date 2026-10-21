@@ -25,7 +25,10 @@ src/lexer.sla      Lua 5.5 lexer (comments, long strings, numerals)
 src/rt.sa          low-level macros (file/format buffer access)
 src/strutil.sla    string helpers over sa_fmt buffer handles
 src/ast.sla        arena AST + node ids
-src/parser.sla     recursive-descent parser
+src/parse_core.sla parser cursor + arena/list builders
+src/parse_expr.sla Lua expression grammar + precedence
+src/parse_stmt.sla Lua statements, blocks, local/global attributes
+src/parser.sla     parser entry point
 src/value.sla      Value / Table / Function arenas
 src/interp.sla     tree-walking evaluator
 src/stdlib.sla     base / string / table / math libraries
@@ -34,21 +37,27 @@ docs/sla-defects.md  defects found while porting
 
 ## Status
 
-Lexer complete. It tokenizes all 34 files in the Lua 5.5 `testes/` suite
-without errors (including `#` shebangs, long-bracket strings/numerals and
-ISO-8859 bytes); the largest file, `math.lua`, produces 8746 tokens. Parser,
-evaluator and stdlib are next.
+Lexer and parser complete. Both stages handle all 34 files in the Lua 5.5
+`testes/` suite without errors, including `#` shebangs, long-bracket
+strings/numerals, ISO-8859 source bytes, named varargs (`...t`), and the Lua 5.5
+`global` / `local <attrib>` declarations. The largest file, `math.lua`, yields
+8746 tokens and 6455 AST nodes (`api.lua`).
 
-Run the lexer checks with:
+Run the front-end checks with:
 
 ```sh
 sla build src/probe_lexer_all.sla --out .sla-cache/lexall.sa
 sa build-exe .sla-cache/lexall.sa -o /tmp/lexall
 /tmp/lexall
+
+sla build src/probe_parse_all.sla --out .sla-cache/parseall.sa
+sa build-exe .sla-cache/parseall.sa -o /tmp/parseall
+/tmp/parseall
 ```
 
 Each stage is compiled with `sla check`, `sla build` and executed before moving
-on. Defects found so far are tracked in `docs/sla-defects.md`.
+on. Defects found so far are tracked in `docs/sla-defects.md`. The evaluator and
+stdlib are next.
 
 ## Build
 
