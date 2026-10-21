@@ -469,7 +469,15 @@ impl Interp {
     fn pat_gsub(&self, args: &Vec<Value>) -> Vec<Value> {
         let s = v_to_string(bs_arg(args, 0));
         let p = v_to_string(bs_arg(args, 1));
+        if len(args) < 3 {
+            self.fail_str(STR_PTR("bad argument #3 to 'string.gsub' (string/function/table expected, got no value)"), 79);
+            return Vec::new();
+        };
         let repl = bs_arg(args, 2);
+        if repl.tag != VT_STR && repl.tag != VT_FUNC && repl.tag != VT_BUILTIN && repl.tag != VT_TABLE && repl.tag != VT_INT && repl.tag != VT_NUM {
+            self.fail_str(STR_PTR("bad argument #3 to 'string.gsub' (string/function/table expected)"), 65);
+            return Vec::new();
+        };
         let ls = s_len(s) as i64;
         let lp = s_len(p) as i64;
         let max_s = ls + 1;

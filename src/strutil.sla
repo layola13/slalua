@@ -100,7 +100,51 @@ fn s_i64(v: i64) -> u64 {
 }
 
 fn s_f64(v: f64) -> u64 {
-    return sa_fmt_f64(v, 14);
+    let raw = sa_fmt_f64(v, 14);
+    let n = s_len(raw);
+    let has_dot = false;
+    let has_alpha = false;
+    let i: u64 = 0;
+    while i < n {
+        let c = s_byte(raw, i);
+        if c == 46 {
+            has_dot = true;
+        };
+        if c == 105 || c == 110 {
+            has_alpha = true;
+        };
+        i = i + 1;
+    }
+    if has_alpha {
+        return raw;
+    };
+    let endp = n;
+    if has_dot {
+        while endp > 0 {
+            if s_byte(raw, (endp - 1) as u64) != 48 {
+                break;
+            };
+            endp = endp - 1;
+        }
+        if endp > 0 {
+            if s_byte(raw, (endp - 1) as u64) == 46 {
+                endp = endp - 1;
+            };
+        };
+    };
+    let out = s_slice(raw, 0, endp);
+    let has2 = false;
+    let j: u64 = 0;
+    while j < s_len(out) {
+        if s_byte(out, j) == 46 {
+            has2 = true;
+        };
+        j = j + 1;
+    }
+    if has2 == false {
+        return s_cat(out, s_from(STR_PTR(".0"), 2));
+    };
+    return out;
 }
 
 fn s_hex(v: u64) -> u64 {
