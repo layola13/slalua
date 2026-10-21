@@ -10,6 +10,8 @@ const VT_STR: i64 = 4;
 const VT_TABLE: i64 = 5;
 const VT_FUNC: i64 = 6;
 const VT_BUILTIN: i64 = 7;
+const VT_THREAD: i64 = 8;
+const VT_USERDATA: i64 = 9;
 
 struct Value {
     tag: i64,
@@ -55,6 +57,14 @@ fn v_func(id: i64) -> Value {
 
 fn v_builtin(id: i64) -> Value {
     return value_new(VT_BUILTIN, id, 0.0, 0);
+}
+
+fn v_thread(id: i64) -> Value {
+    return value_new(VT_THREAD, id, 0.0, 0);
+}
+
+fn v_userdata(id: i64) -> Value {
+    return value_new(VT_USERDATA, id, 0.0, 0);
 }
 
 fn v_truthy(v: Value) -> bool {
@@ -106,6 +116,9 @@ fn v_equal(a: &Value, b: &Value) -> bool {
     if a.tag == VT_TABLE || a.tag == VT_FUNC || a.tag == VT_BUILTIN {
         return a.i == b.i;
     };
+    if a.tag == VT_THREAD || a.tag == VT_USERDATA {
+        return a.i == b.i;
+    };
     return a.f == b.f;
 }
 
@@ -155,6 +168,12 @@ fn v_type_name(v: Value) -> u64 {
     if v.tag == VT_TABLE {
         return s_from(STR_PTR("table"), 5);
     };
+    if v.tag == VT_THREAD {
+        return s_from(STR_PTR("thread"), 6);
+    };
+    if v.tag == VT_USERDATA {
+        return s_from(STR_PTR("userdata"), 8);
+    };
     return s_from(STR_PTR("function"), 8);
 }
 
@@ -182,6 +201,12 @@ fn v_to_string(v: Value) -> u64 {
     };
     if v.tag == VT_FUNC || v.tag == VT_BUILTIN {
         return s_from(STR_PTR("function: 0x0"), 14);
+    };
+    if v.tag == VT_THREAD {
+        return s_from(STR_PTR("thread: 0x0"), 11);
+    };
+    if v.tag == VT_USERDATA {
+        return s_from(STR_PTR("userdata: 0x0"), 14);
     };
     return s_from(STR_PTR("?"), 1);
 }

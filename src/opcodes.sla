@@ -62,3 +62,7 @@ const B_M_DEG: i64 = 82;
 const B_M_RAD: i64 = 83;
 const B_OS_CLOCK: i64 = 94;
 const B_OS_TIME: i64 = 95;
+const B_CORO_RUNNING: i64 = 100;
+const B_CORO_UNSUPPORTED: i64 = 101;
+const B_IO_WRITE: i64 = 102;
+const B_IO_UNSUPPORTED: i64 = 103;

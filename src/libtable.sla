@@ -29,6 +29,28 @@ impl Interp {
         if id == B_REQUIRE {
             return self.bi_require(args);
         };
+        if id == B_CORO_RUNNING {
+            let r = Vec::new();
+            r.push(v_thread(1));
+            r.push(v_bool(true));
+            return r;
+        };
+        if id == B_CORO_UNSUPPORTED {
+            self.fail_str(STR_PTR("coroutine support is not implemented"), 35);
+            return Vec::new();
+        };
+        if id == B_IO_WRITE {
+            let i = 0;
+            while i < (len(args) as i64) {
+                s_write(v_to_string(args[i]));
+                i = i + 1;
+            }
+            return Vec::new();
+        };
+        if id == B_IO_UNSUPPORTED {
+            self.fail_str(STR_PTR("io library is not implemented"), 28);
+            return Vec::new();
+        };
         if id == B_DBG_INFO {
             return self.bi_dbg_info(args);
         };

@@ -48,6 +48,27 @@ impl Interp {
         self.table_set_str(self.globals, bs_str(STR_PTR("setmetatable"), 12), v_builtin(B_SETMETA));
         self.table_set_str(self.globals, bs_str(STR_PTR("collectgarbage"), 14), v_builtin(B_GC));
         self.table_set_str(self.globals, bs_str(STR_PTR("require"), 7), v_builtin(B_REQUIRE));
+        let co = self.new_table();
+        self.table_set_str(co, bs_str(STR_PTR("running"), 7), v_builtin(B_CORO_RUNNING));
+        self.table_set_str(co, bs_str(STR_PTR("create"), 6), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("resume"), 6), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("yield"), 5), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("wrap"), 4), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("status"), 6), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("isyieldable"), 11), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("close"), 5), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(co, bs_str(STR_PTR("run"), 3), v_builtin(B_CORO_UNSUPPORTED));
+        self.table_set_str(self.globals, bs_str(STR_PTR("coroutine"), 9), v_table(co));
+        let io = self.new_table();
+        self.table_set_str(io, bs_str(STR_PTR("stdin"), 5), v_userdata(1));
+        self.table_set_str(io, bs_str(STR_PTR("stdout"), 6), v_userdata(2));
+        self.table_set_str(io, bs_str(STR_PTR("stderr"), 6), v_userdata(3));
+        self.table_set_str(io, bs_str(STR_PTR("write"), 5), v_builtin(B_IO_WRITE));
+        self.table_set_str(io, bs_str(STR_PTR("read"), 4), v_builtin(B_IO_UNSUPPORTED));
+        self.table_set_str(io, bs_str(STR_PTR("lines"), 5), v_builtin(B_IO_UNSUPPORTED));
+        self.table_set_str(io, bs_str(STR_PTR("open"), 4), v_builtin(B_IO_UNSUPPORTED));
+        self.table_set_str(io, bs_str(STR_PTR("close"), 5), v_builtin(B_IO_UNSUPPORTED));
+        self.table_set_str(self.globals, bs_str(STR_PTR("io"), 2), v_table(io));
         let dbg = self.new_table();
         self.table_set_str(dbg, bs_str(STR_PTR("getinfo"), 7), v_builtin(B_DBG_INFO));
         self.table_set_str(dbg, bs_str(STR_PTR("traceback"), 9), v_builtin(B_DBG_TRACE));
@@ -117,6 +138,15 @@ impl Interp {
         self.table_set_str(ot, bs_str(STR_PTR("clock"), 5), v_builtin(B_OS_CLOCK));
         self.table_set_str(ot, bs_str(STR_PTR("time"), 4), v_builtin(B_OS_TIME));
         self.table_set_str(self.globals, bs_str(STR_PTR("os"), 2), v_table(ot));
+        self.table_set_str(loaded, bs_str(STR_PTR("_G"), 2), v_table(self.globals));
+        self.table_set_str(loaded, bs_str(STR_PTR("package"), 7), v_table(pkg));
+        self.table_set_str(loaded, bs_str(STR_PTR("string"), 6), v_table(st));
+        self.table_set_str(loaded, bs_str(STR_PTR("table"), 5), v_table(tt));
+        self.table_set_str(loaded, bs_str(STR_PTR("math"), 4), v_table(mt));
+        self.table_set_str(loaded, bs_str(STR_PTR("os"), 2), v_table(ot));
+        self.table_set_str(loaded, bs_str(STR_PTR("debug"), 5), v_table(dbg));
+        self.table_set_str(loaded, bs_str(STR_PTR("coroutine"), 9), v_table(co));
+        self.table_set_str(loaded, bs_str(STR_PTR("io"), 2), v_table(io));
     }
 
     fn builtin_call(&self, id: i64, args: Vec<Value>) -> Vec<Value> {
@@ -224,6 +254,10 @@ impl Interp {
         };
         if id == B_PAIRS {
             let t = bs_arg(&args, 0);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument #1 to 'pairs' (table expected)"), 43);
+                return Vec::new();
+            };
             let r = Vec::new();
             r.push(v_builtin(B_NEXT));
             r.push(t);
@@ -232,6 +266,10 @@ impl Interp {
         };
         if id == B_IPAIRS {
             let t = bs_arg(&args, 0);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument #1 to 'ipairs' (table expected)"), 44);
+                return Vec::new();
+            };
             let r = Vec::new();
             r.push(v_builtin(B_INEXT));
             r.push(t);
@@ -245,6 +283,12 @@ impl Interp {
                 self.fail_str(STR_PTR("bad argument to 'next'"), 23);
                 return Vec::new();
             };
+            if k.tag != VT_NIL {
+                if !self.table_has(t.i, k) {
+                    self.fail_str(STR_PTR("invalid key to 'next'"), 21);
+                    return Vec::new();
+                };
+            };
             let (k2, v2) = self.table_next(t.i, k);
             let r = Vec::new();
             r.push(k2);
@@ -254,6 +298,10 @@ impl Interp {
         if id == B_INEXT {
             let t = bs_arg(&args, 0);
             let k = bs_arg(&args, 1);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument to 'ipairs'"), 24);
+                return Vec::new();
+            };
             let n = 0;
             if k.tag == VT_INT {
                 n = k.i;
@@ -329,7 +377,7 @@ impl Interp {
         if id >= B_S_LEN && id <= B_S_FIND {
             return self.builtin_string(id, &args);
         };
-        if (id >= B_T_INSERT && id <= B_T_CREATE) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE {
+        if (id >= B_T_INSERT && id <= B_T_CREATE) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_OS_CLOCK || id == B_OS_TIME || id == B_REQUIRE || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_WRITE || id == B_IO_UNSUPPORTED {
             return self.builtin_aux(id, &args);
         };
         if id == B_GC {

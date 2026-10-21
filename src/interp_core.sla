@@ -399,6 +399,11 @@ impl Interp {
         return n;
     }
 
+    fn table_has(&self, tid: i64, key: Value) -> bool {
+        let h = v_hash(&key);
+        return self.t_find(tid, &key, h) >= 0;
+    }
+
     fn table_next(&self, tid: i64, key: Value) -> (Value, Value) {
         if key.tag == VT_NIL {
             return self.t_next_from(tid, 0);
