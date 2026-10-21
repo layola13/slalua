@@ -1,0 +1,57 @@
+@import "sa_std/io/print.sai"
+@import "sa_std/fmt.sai"
+@import "sa_std/string.sa"
+@import "sa_std/ptr.sa"
+@import "sa_std/vec.sa"
+
+enum Value {
+    Nil,
+    Int(i64),
+    Str(i64),
+}
+
+struct Entry {
+    key: Value,
+    value: Value,
+}
+
+struct Table {
+    entries: Vec<Entry>,
+}
+
+fn classify(v: Value) -> i64 {
+    match v {
+        Value::Nil => {
+            return -1;
+        },
+        Value::Int(n) => {
+            return n;
+        },
+        Value::Str(s) => {
+            return s;
+        },
+    };
+}
+
+fn byte_at(data: ptr, i: u64) -> u8 {
+    return PTR_READ_U8(PTR_BYTE_ADD(data, i));
+}
+
+fn main() -> i32 {
+    let t: Vec<Entry> = Vec::new();
+    t.push(Entry { key: Value::Int(1), value: Value::Str(7) });
+    t.push(Entry { key: Value::Nil, value: Value::Int(9) });
+    let a = classify(t[0].key);
+    let b = classify(t[1].value);
+    let text = "let x = 42";
+    let n = STR_LEN(text);
+    let first = byte_at(STR_PTR(text), 0);
+    println("{} {} {} {}", a, b, n, first);
+    return 0;
+}
+
+@test "probe1"() {
+    let text = "let x = 42";
+    if STR_LEN(text) != 10 { panic(1); };
+    if byte_at(STR_PTR(text), 4) != 120 { panic(2); };
+}
