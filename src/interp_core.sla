@@ -208,11 +208,11 @@ impl Interp {
     }
 
     fn table_get(&self, tid: i64, key: Value) -> Value {
-        let es = self.tables[tid].entries;
+        let t = &self.tables[tid];
         let i = 0;
-        while i < (len(es) as i64) {
-            if v_equal(es[i].key, key) {
-                return es[i].val;
+        while i < (len(t.entries) as i64) {
+            if v_equal(&t.entries[i].key, &key) {
+                return t.entries[i].val;
             };
             i = i + 1;
         }
@@ -224,12 +224,11 @@ impl Interp {
             self.fail_str(STR_PTR("table index is nil"), 19);
             return;
         };
-        let es = self.tables[tid].entries;
         let i = 0;
-        while i < (len(es) as i64) {
-            if v_equal(es[i].key, key) {
+        while i < (len(self.tables[tid].entries) as i64) {
+            if v_equal(&self.tables[tid].entries[i].key, &key) {
                 if val.tag == VT_NIL {
-                    let last = (len(es) as i64) - 1;
+                    let last = (len(self.tables[tid].entries) as i64) - 1;
                     if i != last {
                         self.tables[tid].entries[i] = self.tables[tid].entries[last];
                     };
@@ -242,7 +241,9 @@ impl Interp {
             };
             i = i + 1;
         }
-        self.tables[tid].entries.push(entry_new(key, val));
+        if val.tag != VT_NIL {
+            self.tables[tid].entries.push(entry_new(key, val));
+        };
     }
 
     fn table_get_str(&self, tid: i64, s: u64) -> Value {
@@ -268,16 +269,15 @@ impl Interp {
     }
 
     fn table_next(&self, tid: i64, key: Value) -> (Value, Value) {
-        let es = self.tables[tid].entries;
         let start = 0;
         if key.tag != VT_NIL {
             let i = 0;
             let found = 0;
-            while i < (len(es) as i64) {
-                if v_equal(es[i].key, key) {
+            while i < (len(self.tables[tid].entries) as i64) {
+                if v_equal(&self.tables[tid].entries[i].key, &key) {
                     start = i + 1;
                     found = 1;
-                    i = len(es) as i64;
+                    i = len(self.tables[tid].entries) as i64;
                     continue;
                 };
                 i = i + 1;
@@ -287,9 +287,9 @@ impl Interp {
             };
         };
         let j = start;
-        while j < (len(es) as i64) {
-            if es[j].val.tag != VT_NIL {
-                return (es[j].key, es[j].val);
+        while j < (len(self.tables[tid].entries) as i64) {
+            if self.tables[tid].entries[j].val.tag != VT_NIL {
+                return (self.tables[tid].entries[j].key, self.tables[tid].entries[j].val);
             };
             j = j + 1;
         }

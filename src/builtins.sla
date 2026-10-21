@@ -266,7 +266,9 @@ impl Interp {
             return bs_one(t);
         };
         if id == B_RAWEQUAL {
-            return bs_one(v_bool(v_equal(bs_arg(&args, 0), bs_arg(&args, 1))));
+            let a = bs_arg(&args, 0);
+            let b = bs_arg(&args, 1);
+            return bs_one(v_bool(v_equal(&a, &b)));
         };
         if id == B_GETMETA {
             let t = bs_arg(&args, 0);

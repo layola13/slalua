@@ -16,7 +16,7 @@ fn read_text(path_ptr: ptr, path_len: u64) -> u64 {
 }
 
 fn main() -> i32 {
-    let path = "tests/features.lua";
+    let path = "../lua/testes/nextvar.lua";
     let src = read_text(STR_PTR(path), STR_LEN(path));
     if src == 0 {
         println("read failed");

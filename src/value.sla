@@ -78,15 +78,23 @@ fn v_as_num(v: Value) -> f64 {
     return v.f;
 }
 
-fn v_equal(a: Value, b: Value) -> bool {
+fn v_equal(a: &Value, b: &Value) -> bool {
     if a.tag == VT_NIL || b.tag == VT_NIL {
         return a.tag == b.tag;
     };
-    if v_is_number(a) && v_is_number(b) {
+    if (a.tag == VT_INT || a.tag == VT_NUM) && (b.tag == VT_INT || b.tag == VT_NUM) {
         if a.tag == VT_INT && b.tag == VT_INT {
             return a.i == b.i;
         };
-        return v_as_num(a) == v_as_num(b);
+        let an = a.f;
+        if a.tag == VT_INT {
+            an = a.i as f64;
+        };
+        let bn = b.f;
+        if b.tag == VT_INT {
+            bn = b.i as f64;
+        };
+        return an == bn;
     };
     if a.tag != b.tag {
         return false;

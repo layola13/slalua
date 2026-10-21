@@ -537,10 +537,10 @@ impl Interp {
             return v_str(s_cat(v_to_string(a), v_to_string(b)));
         };
         if nd.n == TK_EQ {
-            return v_bool(v_equal(a, b));
+            return v_bool(v_equal(&a, &b));
         };
         if nd.n == TK_NE {
-            return v_bool(v_equal(a, b) == false);
+            return v_bool(v_equal(&a, &b) == false);
         };
         if nd.n == TK_LT || nd.n == TK_LE || nd.n == TK_GT || nd.n == TK_GE {
             let c = 0;
