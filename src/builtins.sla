@@ -206,6 +206,10 @@ impl Interp {
             return bs_one(v_str(v_type_name(tv)));
         };
         if id == B_TOSTRING {
+            if len(args) < 1 {
+                self.fail_str(STR_PTR("bad argument #1 to 'tostring' (value expected)"), 46);
+                return Vec::new();
+            };
             let tv = bs_arg(&args, 0);
             if self.io_is_file(tv) {
                 return bs_one(v_str(self.io_file_string(tv.i)));
@@ -213,6 +217,10 @@ impl Interp {
             return bs_one(v_str(self.tostring_value(tv)));
         };
         if id == B_TONUMBER {
+            if len(args) < 1 {
+                self.fail_str(STR_PTR("bad argument #1 to 'tonumber' (value expected)"), 46);
+                return Vec::new();
+            };
             if len(args) > 1 {
                 return bs_one(self.bi_tonumber_base(bs_arg(&args, 0), bs_arg(&args, 1)));
             };
