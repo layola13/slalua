@@ -250,7 +250,7 @@ impl Interp {
         };
         let posi0 = utf8_posrelat(mut_i, len);
         if posi0 < 1 || (posi0 - 1) > len {
-            self.fail_str(STR_PTR("position out of bounds"), 23);
+            self.fail_str(STR_PTR("position out of bounds"), 22);
             return Vec::new();
         };
         let posi = posi0 - 1;

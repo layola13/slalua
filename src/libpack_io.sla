@@ -38,7 +38,7 @@ impl Interp {
                     return self.pack_fail(STR_PTR("out of limits"), 13);
                 };
                 if pack_pow2(ma) == false {
-                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 40);
                 };
                 continue;
             };
@@ -49,14 +49,14 @@ impl Interp {
                 };
                 if al < 1 || al > 16 {
                     let m = s_cat(s_from(STR_PTR("("), 1), s_i64(al));
-                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 23));
+                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 22));
                     self.fail_text(m2);
                     return Vec::new();
                 };
                 let a = al;
                 if ma > 1 {
                     if a > 1 && pack_pow2(a) == false {
-                        return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                        return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 40);
                     };
                     let lim = ma;
                     let eff = a;
@@ -124,7 +124,7 @@ impl Interp {
             };
             if ma > 1 {
                 if align > 1 && pack_pow2(align) == false {
-                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 40);
                 };
                 let lim = ma;
                 let eff = align;
@@ -181,7 +181,7 @@ impl Interp {
                 argi = argi + 1;
                 let sl = s_len(sv) as i64;
                 if sl > size {
-                    return self.pack_fail(STR_PTR("string longer than given size"), 33);
+                    return self.pack_fail(STR_PTR("string longer than given size"), 29);
                 };
                 if size > 2147483647 || tot > 2147483647 - size {
                     return self.pack_fail(STR_PTR("too long"), 8);
@@ -198,7 +198,7 @@ impl Interp {
                 let i = 0;
                 while i < sl {
                     if s_byte(sv, i as u64) == 0 {
-                        return self.pack_fail(STR_PTR("string contains zeros"), 22);
+                        return self.pack_fail(STR_PTR("string contains zeros"), 21);
                     };
                     i = i + 1;
                 }
@@ -213,7 +213,7 @@ impl Interp {
                 let sl = s_len(sv) as i64;
                 if size < 8 {
                     if (sl as u64) > pack_unsigned_max(size) {
-                        return self.pack_fail(STR_PTR("string length does not fit in given size"), 46);
+                        return self.pack_fail(STR_PTR("string length does not fit in given size"), 40);
                     };
                 };
                 res = pack_put_bits(res, sl as u64, size, le, false, false);
@@ -276,7 +276,7 @@ impl Interp {
                     return self.pack_fail(STR_PTR("out of limits"), 13);
                 };
                 if pack_pow2(ma) == false {
-                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 40);
                 };
                 continue;
             };
@@ -287,7 +287,7 @@ impl Interp {
                 };
                 if al < 1 || al > 16 {
                     let m = s_cat(s_from(STR_PTR("("), 1), s_i64(al));
-                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 23));
+                    let m2 = s_cat(m, s_from(STR_PTR(") out of limits [1,16]"), 22));
                     self.fail_text(m2);
                     return Vec::new();
                 };
@@ -352,7 +352,7 @@ impl Interp {
             };
             if ma > 1 {
                 if align > 1 && pack_pow2(align) == false {
-                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 46);
+                    return self.pack_fail(STR_PTR("format asks for alignment not power of 2"), 40);
                 };
                 let lim = ma;
                 let eff = align;

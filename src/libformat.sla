@@ -200,7 +200,7 @@ impl Interp {
                     let zi: u64 = 0;
                     while zi < s_len(item) {
                         if s_byte(item, zi) == 0 {
-                            self.fail_text(bs_str(STR_PTR("string contains zeros"), 22));
+                            self.fail_text(bs_str(STR_PTR("string contains zeros"), 21));
                             return bs_str(STR_PTR(""), 0);
                         };
                         zi = zi + 1;

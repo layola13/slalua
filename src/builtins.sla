@@ -188,7 +188,7 @@ impl Interp {
             if self.io_is_file(tv) {
                 return bs_one(v_str(s_from(STR_PTR("userdata"), 8)));
             };
-            return bs_one(v_str(v_type_name(tv)));
+            return bs_one(v_str(self.vtype_name(tv)));
         };
         if id == B_TOSTRING {
             if len(args) < 1 {
@@ -442,7 +442,7 @@ impl Interp {
                     return bs_one(sm);
                 };
             };
-            let tm = self.type_meta(v_type_name(t));
+            let tm = self.type_meta(self.vtype_name(t));
             if tm >= 0 {
                 return bs_one(v_table(tm));
             };
@@ -590,7 +590,7 @@ impl Interp {
                     continue;
                 };
                 if r[0].tag != VT_STR {
-                    self.fail_str(STR_PTR("reader function must return a string"), 35);
+                    self.fail_str(STR_PTR("reader function must return a string"), 36);
                     return Vec::new();
                 };
                 if s_len(r[0].s) == 0 {
@@ -643,7 +643,7 @@ impl Interp {
         if pv.tag != VT_STR {
             let r = Vec::new();
             r.push(v_nil());
-            r.push(v_str(bs_str(STR_PTR("bad argument to 'loadfile'"), 25)));
+            r.push(v_str(bs_str(STR_PTR("bad argument to 'loadfile'"), 26)));
             return r;
         };
         let (ok, src) = self.io_read_disk(pv.s);
@@ -659,7 +659,7 @@ impl Interp {
     fn bi_dofile(&self, args: &Vec<Value>) -> Vec<Value> {
         let pv = bs_arg(args, 0);
         if pv.tag != VT_STR {
-            self.fail_str(STR_PTR("bad argument to 'dofile'"), 22);
+            self.fail_str(STR_PTR("bad argument to 'dofile'"), 24);
             return Vec::new();
         };
         let (ok, src) = self.io_read_disk(pv.s);
@@ -728,8 +728,8 @@ impl Interp {
     fn sm_arith(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
         let a0 = bs_arg(args, 0);
         let b0 = bs_arg(args, 1);
-        let t1 = v_type_name(a0);
-        let t2 = v_type_name(b0);
+        let t1 = self.vtype_name(a0);
+        let t2 = self.vtype_name(b0);
         let a = self.v_coerce_num(a0);
         let b = self.v_coerce_num(b0);
         if v_is_number(a) == false || v_is_number(b) == false {
@@ -744,7 +744,7 @@ impl Interp {
 
     fn sm_unm(&self, args: &Vec<Value>) -> Vec<Value> {
         let a0 = bs_arg(args, 0);
-        let t1 = v_type_name(a0);
+        let t1 = self.vtype_name(a0);
         let a = self.v_coerce_num(a0);
         if v_is_number(a) == false {
             let m1 = s_cat(s_cat(s_from(STR_PTR("attempt to "), 11), self.sm_op_name(B_SM_UNM)), s_from(STR_PTR(" a '"), 4));

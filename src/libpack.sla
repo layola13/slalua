@@ -208,7 +208,7 @@ impl Interp {
             let c = s_byte(fmt, pos as u64);
             pos = pos + 1;
             if c == 115 || c == 122 {
-                self.fail_str(STR_PTR("variable-length format"), 23);
+                self.fail_str(STR_PTR("variable-length format"), 22);
                 return 0;
             };
             if c == 33 {
