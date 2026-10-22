@@ -15,19 +15,7 @@
 @import "src/libos.sla"
 @import "src/libio.sla"
 @import "src/libdebug.sla"
-
-fn digit_val(c: u8) -> i64 {
-    if c >= 48 && c <= 57 {
-        return (c as i64) - 48;
-    };
-    if c >= 97 && c <= 122 {
-        return (c as i64) - 97 + 10;
-    };
-    if c >= 65 && c <= 90 {
-        return (c as i64) - 65 + 10;
-    };
-    return -1;
-}
+@import "src/libnumber.sla"
 
 
 impl Interp {
@@ -602,13 +590,6 @@ impl Interp {
         return bs_one(v_func(self.new_func(Vec::new(), p.root, 1, 0, -1)));
     }
 
-    fn v_coerce_num(&self, v: Value) -> Value {
-        if v.tag == VT_STR {
-            return self.bi_tonumber(v);
-        };
-        return v;
-    }
-
     fn sm_op_token(&self, id: i64) -> i64 {
         if id == B_SM_ADD {
             return TK_ADD;
@@ -691,179 +672,6 @@ impl Interp {
             return bs_one(v_int(0 - a.i));
         };
         return bs_one(v_num(0.0 - a.f));
-    }
-
-    fn bi_tonumber(&self, v: Value) -> Value {
-        if v_is_number(v) {
-            return v;
-        };
-        if v.tag != VT_STR {
-            return v_nil();
-        };
-        let raw = s_len(v.s);
-        let a: u64 = 0;
-        while a < raw && lx_is_space(s_byte(v.s, a)) {
-            a = a + 1;
-        }
-        let b = raw;
-        while b > a && lx_is_space(s_byte(v.s, b - 1)) {
-            b = b - 1;
-        }
-        if a >= b {
-            return v_nil();
-        };
-        let t = s_slice(v.s, a, b - a);
-        let n = s_len(t);
-        let i: u64 = 0;
-        let neg = false;
-        if s_byte(t, 0) == 45 {
-            neg = true;
-            i = 1;
-        } else {
-            if s_byte(t, 0) == 43 {
-                i = 1;
-            };
-        };
-        if i + 1 < n && s_byte(t, i) == 48 {
-            let h = s_byte(t, i + 1);
-            if h == 120 || h == 88 {
-                return self.bi_tonumber_hex(t, i + 2, neg);
-            };
-        };
-        let val: i64 = 0;
-        let digits = 0;
-        while i < n {
-            let c = s_byte(t, i);
-            if c < 48 || c > 57 {
-                if s_num_valid(t) {
-                    return v_num(SLA_PARSE_F64(t));
-                };
-                return v_nil();
-            };
-            val = val * 10 + (c as i64) - 48;
-            digits = digits + 1;
-            i = i + 1;
-        }
-        if digits == 0 {
-            return v_nil();
-        };
-        if neg {
-            return v_int(0 - val);
-        };
-        return v_int(val);
-    };
-
-    fn bi_tonumber_base(&self, v: Value, basev: Value) -> Value {
-        let base = self.bi_int(basev, 10);
-        if base < 2 || base > 36 {
-            self.fail_str(STR_PTR("base out of range"), 17);
-            return v_nil();
-        };
-        if v.tag != VT_STR {
-            return v_nil();
-        };
-        let raw = s_len(v.s);
-        let a: u64 = 0;
-        while a < raw && lx_is_space(s_byte(v.s, a)) {
-            a = a + 1;
-        }
-        let b = raw;
-        while b > a && lx_is_space(s_byte(v.s, b - 1)) {
-            b = b - 1;
-        }
-        if a >= b {
-            return v_nil();
-        };
-        let i = a;
-        let neg = false;
-        if s_byte(v.s, i) == 45 {
-            neg = true;
-            i = i + 1;
-        } else {
-            if s_byte(v.s, i) == 43 {
-                i = i + 1;
-            };
-        };
-        if i >= b {
-            return v_nil();
-        };
-        let val: i64 = 0;
-        while i < b {
-            let d = digit_val(s_byte(v.s, i));
-            if d < 0 || d >= base {
-                return v_nil();
-            };
-            val = val * base + d;
-            i = i + 1;
-        }
-        if neg {
-            return v_int(0 - val);
-        };
-        return v_int(val);
-    };
-
-    fn bi_tonumber_hex(&self, s: u64, from: u64, neg: bool) -> Value {
-        let n = s_len(s);
-        let i = from;
-        let iv: i64 = 0;
-        let fv = 0.0;
-        let scale = 1.0;
-        let isf = false;
-        while i < n && lx_is_hex(s_byte(s, i)) {
-            let d = lx_hex_val(s_byte(s, i));
-            iv = iv * 16 + d;
-            fv = fv * 16.0 + (d as f64);
-            i = i + 1;
-        }
-        if i < n && s_byte(s, i) == 46 {
-            isf = true;
-            i = i + 1;
-            while i < n && lx_is_hex(s_byte(s, i)) {
-                scale = scale / 16.0;
-                fv = fv + (lx_hex_val(s_byte(s, i)) as f64) * scale;
-                i = i + 1;
-            }
-        };
-        if i < n && (s_byte(s, i) == 112 || s_byte(s, i) == 80) {
-            isf = true;
-            i = i + 1;
-            let eneg = false;
-            if i < n && s_byte(s, i) == 45 {
-                eneg = true;
-                i = i + 1;
-            } else {
-                if i < n && s_byte(s, i) == 43 {
-                    i = i + 1;
-                };
-            };
-            let ex = 0;
-            while i < n && lx_is_digit(s_byte(s, i)) {
-                ex = ex * 10 + (s_byte(s, i) as i64) - 48;
-                i = i + 1;
-            }
-            let k = 0;
-            while k < ex {
-                if eneg {
-                    fv = fv / 2.0;
-                } else {
-                    fv = fv * 2.0;
-                };
-                k = k + 1;
-            }
-        };
-        if i != n {
-            return v_nil();
-        };
-        if isf {
-            if neg {
-                return v_num(0.0 - fv);
-            };
-            return v_num(fv);
-        };
-        if neg {
-            return v_int(0 - iv);
-        };
-        return v_int(iv);
     }
 
 };
