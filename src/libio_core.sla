@@ -198,6 +198,7 @@ impl Interp {
         let mt = self.new_table();
         self.table_set_str(mt, s_from(STR_PTR("__index"), 7), v_table(methods));
         self.table_set_str(mt, s_from(STR_PTR("__name"), 6), v_str(s_from(STR_PTR("FILE*"), 5)));
+        self.table_set_str(mt, s_from(STR_PTR("__close"), 7), v_builtin(B_IO_FCLOSE));
         let imt = self.new_table();
         self.table_set_str(imt, s_from(STR_PTR("__call"), 6), v_builtin(B_IO_ITER));
         self.table_set_str(io, s_from(STR_PTR("__mt"), 4), v_table(mt));

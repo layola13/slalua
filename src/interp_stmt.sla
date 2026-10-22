@@ -8,6 +8,11 @@
 
 impl Interp {
     fn exec_block(&self, env: i64, lid: i64) -> void {
+        self.exec_block_inner(env, lid);
+        self.close_scope(env);
+    }
+
+    fn exec_block_inner(&self, env: i64, lid: i64) -> void {
         let n = self.list_len(lid);
         let pc = 0;
         while pc < n {
@@ -201,8 +206,52 @@ impl Interp {
             if i < (len(vals) as i64) {
                 v = vals[i];
             };
-            self.env_define(env, nn.s, v, nn.n);
+            let cons = 0;
+            if nn.n == 1 {
+                cons = 1;
+            };
+            if nn.n == 2 {
+                self.envs[env].tbc.push(nn.s);
+            };
+            self.env_define(env, nn.s, v, cons);
             i = i + 1;
+        }
+    }
+
+    fn close_value(&self, v: Value) -> void {
+        if v.tag != VT_TABLE {
+            return;
+        };
+        let meta = self.tables[v.i].meta;
+        if meta < 0 {
+            return;
+        };
+        let f = self.table_get_str(meta, s_from(STR_PTR("__close"), 7));
+        if f.tag == VT_FUNC || f.tag == VT_BUILTIN {
+            let cargs = Vec::new();
+            cargs.push(v);
+            self.call_value(f, cargs);
+        };
+    }
+
+    fn close_scope(&self, env: i64) -> void {
+        let n = len(self.envs[env].tbc) as i64;
+        let i = n - 1;
+        while i >= 0 {
+            let name = self.envs[env].tbc[i];
+            let v = v_nil();
+            let vars = self.envs[env].vars;
+            let j = (len(vars) as i64) - 1;
+            while j >= 0 {
+                if s_eq(vars[j].name, name) {
+                    v = vars[j].val;
+                    j = -1;
+                    continue;
+                };
+                j = j - 1;
+            }
+            self.close_value(v);
+            i = i - 1;
         }
     }
 

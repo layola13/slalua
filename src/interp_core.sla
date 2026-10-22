@@ -22,6 +22,7 @@ struct Env {
     vars: Vec<Binding>,
     varargs: Vec<Value>,
     vargname: u64,
+    tbc: Vec<u64>,
 }
 
 struct Entry {
@@ -76,7 +77,7 @@ fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
 }
 
 fn env_new(parent: i64) -> Env {
-    return Env { parent: parent, vars: Vec::new(), varargs: Vec::new(), vargname: 0 };
+    return Env { parent: parent, vars: Vec::new(), varargs: Vec::new(), vargname: 0, tbc: Vec::new() };
 }
 
 fn entry_new(key: Value, val: Value) -> Entry {
