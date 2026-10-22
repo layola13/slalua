@@ -500,3 +500,75 @@ Workaround: omit the `;` after a `while` block.
 
 Status: open (parser). The `if`/`while` inconsistency makes the trap easy to
 hit while porting.
+
+## D-016: an `f64` local carried across a `while` loop is reinterpreted as raw bits
+
+Trigger: an `f64` local that is updated inside a `while` loop and read on the
+next iteration. The value that reaches the loop head is the IEEE-754 bit
+pattern of the float, not the float itself, so comparisons and arithmetic see
+garbage (for `1.0` the observed value is `4607182418800017400`).
+
+Minimal reproducer:
+
+```sla
+@import "sa_std/io/print.sai"
+
+fn maxloop(a: f64, b: f64, c: f64) -> f64 {
+    let best = a;
+    let bestn = a;
+    let i = 1;
+    while i < 3 {
+        let vn = if i == 1 { b } else { c };
+        if vn > bestn {
+            best = vn;
+            bestn = vn;
+        };
+        i = i + 1;
+    }
+    return best;
+}
+
+fn main() -> i32 {
+    println("{}", maxloop(1.0, 5.0, 3.0));
+    return 0;
+}
+```
+
+Observed: prints `4607182418800017400.0000000000` instead of `5.0`.
+
+Expected: `5.0`.
+
+Workaround used by `slalua`: do not keep an `f64` as a loop-carried
+local. Keep the boxed `Value` as the accumulator and re-derive the numeric
+comparison from it on every iteration (see `math.max`/`math.min` in
+`src/libtable.sla`).
+
+Status: open (type/phi lowering).
+
+## D-017: reading a `Vec<f64>` element yields `0.0`
+
+Trigger: indexing a `Vec<f64>`. `Vec<i64>` and `Vec<Value>` work; only `f64`
+elements are read back as zero.
+
+Minimal reproducer:
+
+```sla
+@import "sa_std/vec.sa"
+@import "sa_std/io/print.sai"
+
+fn main() -> i32 {
+    let v: Vec<f64> = Vec::new();
+    v.push(1.5);
+    println("{}", v[0]);
+    return 0;
+}
+```
+
+Observed: prints `0.0000000000`.
+
+Expected: prints `1.5000000000`.
+
+Workaround: store floats in a `Vec<Value>` / boxed form, or keep them in
+struct fields instead of a `Vec<f64>`.
+
+Status: open (Vec element load for `f64`).
