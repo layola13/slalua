@@ -91,6 +91,7 @@ impl Interp {
         self.table_set_str(self.globals, bs_str(STR_PTR("debug"), 5), v_table(dbg));
         let smeta = self.new_table();
         self.table_set_str(self.globals, bs_str(STR_PTR("__strmeta"), 9), v_table(smeta));
+        self.set_type_meta(bs_str(STR_PTR("string"), 6), smeta);
         let pkg = self.new_table();
         let loaded = self.new_table();
         let preload = self.new_table();
@@ -444,6 +445,10 @@ impl Interp {
                 if sm.tag == VT_TABLE {
                     return bs_one(sm);
                 };
+            };
+            let tm = self.type_meta(v_type_name(t));
+            if tm >= 0 {
+                return bs_one(v_table(tm));
             };
             return bs_one(v_nil());
         };

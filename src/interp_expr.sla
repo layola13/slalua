@@ -295,6 +295,22 @@ impl Interp {
                 };
             };
         };
+        let tmeta = self.type_meta(v_type_name(obj));
+        if tmeta >= 0 {
+            let idx = self.table_get_str(tmeta, s_from(STR_PTR("__index"), 7));
+            if idx.tag == VT_TABLE {
+                return self.get_index(idx, key);
+            };
+            if idx.tag == VT_FUNC || idx.tag == VT_BUILTIN {
+                let cargs = Vec::new();
+                cargs.push(obj);
+                cargs.push(key);
+                let out = self.call_value(idx, cargs);
+                if len(out) > 0 {
+                    return out[0];
+                };
+            };
+        };
         self.fail_str(STR_PTR("attempt to index a non-table value"), 34);
         return v_nil();
     }
@@ -568,7 +584,7 @@ impl Interp {
                 return sm.i;
             };
         };
-        return -1;
+        return self.type_meta(v_type_name(v));
     }
 
     fn bin_mm_name(&self, op: i64) -> u64 {
@@ -759,6 +775,13 @@ impl Interp {
                     };
                 };
                 return v_int(self.table_len(v.i));
+            };
+            let tmeta = self.type_meta(v_type_name(v));
+            if tmeta >= 0 {
+                let f = self.table_get_str(tmeta, s_from(STR_PTR("__len"), 5));
+                if f.tag == VT_FUNC || f.tag == VT_BUILTIN {
+                    return self.mm_un(s_from(STR_PTR("__len"), 5), v);
+                };
             };
             self.fail_str(STR_PTR("attempt to get length of a value"), 32);
             return v_nil();

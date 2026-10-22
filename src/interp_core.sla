@@ -68,6 +68,7 @@ struct Interp {
     depth: i64,
     in_error: i64,
     index_depth: i64,
+    typemeta: i64,
 }
 
 fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
@@ -120,8 +121,10 @@ fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
         depth: 0,
         in_error: 0,
         index_depth: 0,
+        typemeta: 0,
     };
     it.globals = it.new_table();
+    it.typemeta = it.new_table();
     return it;
 }
 
@@ -257,6 +260,22 @@ impl Interp {
             cur = self.envs[cur].parent;
         }
         return 0;
+    }
+
+    fn type_meta(&self, tname: u64) -> i64 {
+        let m = self.table_get_str(self.typemeta, tname);
+        if m.tag == VT_TABLE {
+            return m.i;
+        };
+        return -1;
+    }
+
+    fn set_type_meta(&self, tname: u64, mid: i64) -> void {
+        if mid >= 0 {
+            self.table_set_str(self.typemeta, tname, v_table(mid));
+        } else {
+            self.table_set_str(self.typemeta, tname, v_nil());
+        };
     }
 
     fn env_table(&self, env: i64) -> Value {

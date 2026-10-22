@@ -270,6 +270,11 @@ impl Interp {
             if m >= 0 {
                 return bs_one(v_table(m));
             };
+            return bs_one(v_nil());
+        };
+        let tm = self.type_meta(v_type_name(o));
+        if tm >= 0 {
+            return bs_one(v_table(tm));
         };
         return bs_one(v_nil());
     }
@@ -283,6 +288,13 @@ impl Interp {
             } else {
                 self.tables[o.i].meta = -1;
             };
+            return bs_one(o);
+        };
+        let tn = v_type_name(o);
+        if m.tag == VT_TABLE {
+            self.set_type_meta(tn, m.i);
+        } else {
+            self.set_type_meta(tn, -1);
         };
         return bs_one(o);
     }
