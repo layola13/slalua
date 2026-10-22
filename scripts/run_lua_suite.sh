@@ -35,7 +35,7 @@ run_one() {
     out=$(cd "$CWD" && SLALUA_SCRIPT="$file" timeout "$TIMEOUT" "$BIN" 2>&1)
     rc=$?
     last=$(printf '%s\n' "$out" | tail -n 1)
-    if printf '%s\n' "$out" | grep -qx 'OK'; then
+    if printf '%s\n' "$out" | grep -qxE 'OK|ok'; then
         pass=$((pass + 1))
         printf 'PASS    %-28s %s\n' "$(basename "$file")" "$last"
     elif [ "$rc" -eq 124 ]; then

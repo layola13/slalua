@@ -522,6 +522,9 @@ impl Interp {
         if id == B_UTF8_CODES_NEXT {
             return self.utf8_codes_next(&args);
         };
+        if id == B_UTF8_CODES_NEXT_LAX {
+            return self.utf8_codes_next_lax(&args);
+        };
         if id == B_DBG_GETINFO {
             return self.dbg_getinfo(&args);
         };
