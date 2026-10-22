@@ -126,3 +126,4 @@ const B_IO_FSETVBUF: i64 = 156;
 const B_IO_POPEN: i64 = 157;
 const B_S_PACK: i64 = 158;
 const B_S_UNPACK: i64 = 159;
+const B_RAWLEN: i64 = 160;

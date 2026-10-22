@@ -48,6 +48,7 @@ impl Interp {
         self.table_set_str(self.globals, bs_str(STR_PTR("rawget"), 6), v_builtin(B_RAWGET));
         self.table_set_str(self.globals, bs_str(STR_PTR("rawset"), 6), v_builtin(B_RAWSET));
         self.table_set_str(self.globals, bs_str(STR_PTR("rawequal"), 8), v_builtin(B_RAWEQUAL));
+        self.table_set_str(self.globals, bs_str(STR_PTR("rawlen"), 6), v_builtin(B_RAWLEN));
         self.table_set_str(self.globals, bs_str(STR_PTR("getmetatable"), 12), v_builtin(B_GETMETA));
         self.table_set_str(self.globals, bs_str(STR_PTR("setmetatable"), 12), v_builtin(B_SETMETA));
         self.table_set_str(self.globals, bs_str(STR_PTR("collectgarbage"), 14), v_builtin(B_GC));
@@ -89,14 +90,6 @@ impl Interp {
         self.table_set_str(dbg, bs_str(STR_PTR("setmetatable"), 12), v_builtin(B_DBG_SETMETATABLE));
         self.table_set_str(self.globals, bs_str(STR_PTR("debug"), 5), v_table(dbg));
         let smeta = self.new_table();
-        self.table_set_str(smeta, bs_str(STR_PTR("__add"), 5), v_builtin(B_SM_ADD));
-        self.table_set_str(smeta, bs_str(STR_PTR("__sub"), 5), v_builtin(B_SM_SUB));
-        self.table_set_str(smeta, bs_str(STR_PTR("__mul"), 5), v_builtin(B_SM_MUL));
-        self.table_set_str(smeta, bs_str(STR_PTR("__mod"), 5), v_builtin(B_SM_MOD));
-        self.table_set_str(smeta, bs_str(STR_PTR("__pow"), 5), v_builtin(B_SM_POW));
-        self.table_set_str(smeta, bs_str(STR_PTR("__div"), 5), v_builtin(B_SM_DIV));
-        self.table_set_str(smeta, bs_str(STR_PTR("__idiv"), 6), v_builtin(B_SM_IDIV));
-        self.table_set_str(smeta, bs_str(STR_PTR("__unm"), 5), v_builtin(B_SM_UNM));
         self.table_set_str(self.globals, bs_str(STR_PTR("__strmeta"), 9), v_table(smeta));
         let pkg = self.new_table();
         let loaded = self.new_table();
@@ -129,6 +122,7 @@ impl Interp {
         self.table_set_str(st, bs_str(STR_PTR("gmatch"), 6), v_builtin(B_S_GMATCH));
         self.table_set_str(st, bs_str(STR_PTR("gsub"), 4), v_builtin(B_S_GSUB));
         self.table_set_str(self.globals, bs_str(STR_PTR("string"), 6), v_table(st));
+        self.table_set_str(smeta, bs_str(STR_PTR("__index"), 7), v_table(st));
         let tt = self.new_table();
         self.table_set_str(tt, bs_str(STR_PTR("insert"), 6), v_builtin(B_T_INSERT));
         self.table_set_str(tt, bs_str(STR_PTR("remove"), 6), v_builtin(B_T_REMOVE));
@@ -414,11 +408,35 @@ impl Interp {
             let b = bs_arg(&args, 1);
             return bs_one(v_bool(v_equal(&a, &b)));
         };
+        if id == B_RAWLEN {
+            if len(args) < 1 {
+                self.fail_str(STR_PTR("bad argument #1 to 'rawlen' (value expected)"), 44);
+                return Vec::new();
+            };
+            let v = bs_arg(&args, 0);
+            if self.io_is_file(v) {
+                self.fail_str(STR_PTR("bad argument #1 to 'rawlen' (table or string expected)"), 54);
+                return Vec::new();
+            };
+            if v.tag == VT_STR {
+                return bs_one(v_int(s_len(v.s) as i64));
+            };
+            if v.tag == VT_TABLE {
+                return bs_one(v_int(self.table_len(v.i)));
+            };
+            self.fail_str(STR_PTR("bad argument #1 to 'rawlen' (table or string expected)"), 54);
+            return Vec::new();
+        };
         if id == B_GETMETA {
             let t = bs_arg(&args, 0);
             if t.tag == VT_TABLE {
                 if self.tables[t.i].meta >= 0 {
-                    return bs_one(v_table(self.tables[t.i].meta));
+                    let m = self.tables[t.i].meta;
+                    let prot = self.table_get_str(m, bs_str(STR_PTR("__metatable"), 11));
+                    if prot.tag != VT_NIL {
+                        return bs_one(prot);
+                    };
+                    return bs_one(v_table(m));
                 };
             };
             if t.tag == VT_STR {
@@ -433,6 +451,14 @@ impl Interp {
             let t = bs_arg(&args, 0);
             let m = bs_arg(&args, 1);
             if t.tag == VT_TABLE {
+                if self.tables[t.i].meta >= 0 {
+                    let cur = self.tables[t.i].meta;
+                    let prot = self.table_get_str(cur, bs_str(STR_PTR("__metatable"), 11));
+                    if prot.tag != VT_NIL {
+                        self.fail_str(STR_PTR("cannot change a protected metatable"), 35);
+                        return Vec::new();
+                    };
+                };
                 if m.tag == VT_TABLE {
                     self.tables[t.i].meta = m.i;
                 } else {

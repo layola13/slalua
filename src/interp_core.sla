@@ -67,6 +67,7 @@ struct Interp {
     tail_args: Vec<Value>,
     depth: i64,
     in_error: i64,
+    index_depth: i64,
 }
 
 fn binding_new(name: u64, val: Value, cons: i64) -> Binding {
@@ -118,6 +119,7 @@ fn interp_new(nodes: Vec<Node>, lists: Vec<List>) -> Interp {
         tail_args: Vec::new(),
         depth: 0,
         in_error: 0,
+        index_depth: 0,
     };
     it.globals = it.new_table();
     return it;
@@ -286,15 +288,6 @@ impl Interp {
             let idx = self.table_get_str(meta, s_from(STR_PTR("__index"), 7));
             if idx.tag == VT_TABLE {
                 return self.t_index_chain(idx.i, key, depth + 1);
-            };
-            if idx.tag == VT_FUNC || idx.tag == VT_BUILTIN {
-                let cargs = Vec::new();
-                cargs.push(v_table(tid));
-                cargs.push(key);
-                let out = self.call_value(idx, cargs);
-                if len(out) > 0 {
-                    return out[0];
-                };
             };
         };
         return v_nil();
