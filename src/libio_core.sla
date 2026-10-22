@@ -105,6 +105,22 @@ fn io_nil_err(msg: ptr, n: u64) -> Vec<Value> {
     return out;
 }
 
+fn io_arg_type_name(args: &Vec<Value>, i: i64) -> u64 {
+    if i >= (len(args) as i64) {
+        return s_from(STR_PTR("no value"), 8);
+    };
+    return v_type_name(args[i]);
+}
+
+fn io_argerr_msg(fname: u64, expected: u64, got: u64) -> u64 {
+    let m1 = s_cat(s_from(STR_PTR("bad argument #1 to '"), 20), fname);
+    let m2 = s_cat(m1, s_from(STR_PTR("' ("), 3));
+    let m3 = s_cat(m2, expected);
+    let m4 = s_cat(m3, s_from(STR_PTR(" expected, got "), 15));
+    let m5 = s_cat(m4, got);
+    return s_cat(m5, s_from(STR_PTR(")"), 1));
+}
+
 impl Interp {
     fn io_fget(&self, h: i64, name: u64) -> Value {
         return self.table_get_str(h, name);

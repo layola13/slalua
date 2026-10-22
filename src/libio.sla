@@ -114,7 +114,7 @@ impl Interp {
         if id == B_IO_FWRITE {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'write' (FILE* expected)"), 43);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("write"), 5), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             return self.io_file_write(a.i, args, 1);
@@ -135,7 +135,7 @@ impl Interp {
         if id == B_IO_FREAD {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'read' (FILE* expected)"), 42);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("read"), 4), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             return self.io_read_many(a.i, args, 1);
@@ -181,7 +181,7 @@ impl Interp {
         if id == B_IO_FCLOSE {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'close' (FILE* expected)"), 43);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("close"), 5), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             return self.io_close_file(a.i, false);
@@ -206,7 +206,7 @@ impl Interp {
         if id == B_IO_FFLUSH {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'flush' (FILE* expected)"), 43);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("flush"), 5), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             return self.io_file_flush(a.i);
@@ -214,7 +214,7 @@ impl Interp {
         if id == B_IO_FSEEK {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'seek' (FILE* expected)"), 42);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("seek"), 4), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             let h = a.i;
@@ -286,7 +286,7 @@ impl Interp {
         if id == B_IO_FLINES {
             let a = bs_arg(args, 0);
             if self.io_is_file(a) == false {
-                self.fail_str(STR_PTR("bad argument #1 to 'lines' (FILE* expected)"), 43);
+                self.fail_text(io_argerr_msg(s_from(STR_PTR("lines"), 5), s_from(STR_PTR("FILE*"), 5), io_arg_type_name(args, 0)));
                 return Vec::new();
             };
             return bs_one(self.io_make_iter(a.i, args, 1, false));

@@ -29,6 +29,8 @@ impl Interp {
         self.table_set_str(self.globals, bs_str(STR_PTR("pcall"), 5), v_builtin(B_PCALL));
         self.table_set_str(self.globals, bs_str(STR_PTR("xpcall"), 6), v_builtin(B_XPCALL));
         self.table_set_str(self.globals, bs_str(STR_PTR("load"), 4), v_builtin(B_LOAD));
+        self.table_set_str(self.globals, bs_str(STR_PTR("loadfile"), 8), v_builtin(B_LOADFILE));
+        self.table_set_str(self.globals, bs_str(STR_PTR("dofile"), 6), v_builtin(B_DOFILE));
         self.table_set_str(self.globals, bs_str(STR_PTR("pairs"), 5), v_builtin(B_PAIRS));
         self.table_set_str(self.globals, bs_str(STR_PTR("ipairs"), 6), v_builtin(B_IPAIRS));
         self.table_set_str(self.globals, bs_str(STR_PTR("next"), 4), v_builtin(B_NEXT));
@@ -237,6 +239,12 @@ impl Interp {
         if id == B_LOAD {
             return self.bi_load(&args);
         };
+        if id == B_LOADFILE {
+            return self.bi_loadfile(&args);
+        };
+        if id == B_DOFILE {
+            return self.bi_dofile(&args);
+        };
         if id == B_XPCALL {
             let f = bs_arg(&args, 0);
             let h = bs_arg(&args, 1);
@@ -444,11 +452,11 @@ impl Interp {
             let t = bs_arg(&args, 0);
             let m = bs_arg(&args, 1);
             if t.tag != VT_TABLE {
-                self.fail_str(STR_PTR("bad argument #1 to 'setmetatable' (table expected)"), 52);
+                self.fail_str(STR_PTR("bad argument #1 to 'setmetatable' (table expected)"), 50);
                 return Vec::new();
             };
             if m.tag != VT_TABLE && m.tag != VT_NIL {
-                self.fail_str(STR_PTR("bad argument #2 to 'setmetatable' (nil or table expected)"), 56);
+                self.fail_str(STR_PTR("bad argument #2 to 'setmetatable' (nil or table expected)"), 57);
                 return Vec::new();
             };
             if self.tables[t.i].meta >= 0 {
@@ -557,13 +565,53 @@ impl Interp {
 
     fn bi_load(&self, args: &Vec<Value>) -> Vec<Value> {
         let sv = bs_arg(args, 0);
+        if len(args) > 2 {
+            let mv = bs_arg(args, 2);
+            if mv.tag == VT_STR {
+                let mode = mv.s;
+                let ok = s_eq_lit(mode, STR_PTR("t"), 1) || s_eq_lit(mode, STR_PTR("b"), 1) || s_eq_lit(mode, STR_PTR("bt"), 2);
+                if ok == false {
+                    self.fail_str(STR_PTR("invalid mode"), 12);
+                    return Vec::new();
+                };
+            };
+        };
+        if sv.tag == VT_FUNC || sv.tag == VT_BUILTIN {
+            let mut_src = bs_str(STR_PTR(""), 0);
+            let mut_done = false;
+            while mut_done == false {
+                let r = self.call_value(sv, Vec::new());
+                if len(r) == 0 {
+                    mut_done = true;
+                    continue;
+                };
+                if r[0].tag == VT_NIL {
+                    mut_done = true;
+                    continue;
+                };
+                if r[0].tag != VT_STR {
+                    self.fail_str(STR_PTR("reader function must return a string"), 35);
+                    return Vec::new();
+                };
+                if s_len(r[0].s) == 0 {
+                    mut_done = true;
+                    continue;
+                };
+                mut_src = s_cat(mut_src, r[0].s);
+            }
+            return self.bi_load_source(mut_src);
+        };
         if sv.tag != VT_STR {
             let r = Vec::new();
             r.push(v_nil());
             r.push(v_str(bs_str(STR_PTR("bad argument to 'load'"), 22)));
             return r;
         };
-        let lx = lex_source(sv.s);
+        return self.bi_load_source(sv.s);
+    }
+
+    fn bi_load_source(&self, src: u64) -> Vec<Value> {
+        let lx = lex_source(src);
         let p = parse_tokens_base(lx, len(self.nodes) as i64, len(self.lists) as i64);
         if p.err != 0 {
             let msg = s_cat(bs_str(STR_PTR("syntax error near line "), 23), s_i64(p.errline));
@@ -588,6 +636,43 @@ impl Interp {
             j = j + 1;
         }
         return bs_one(v_func(self.new_func(Vec::new(), p.root, 1, 0, -1)));
+    }
+
+    fn bi_loadfile(&self, args: &Vec<Value>) -> Vec<Value> {
+        let pv = bs_arg(args, 0);
+        if pv.tag != VT_STR {
+            let r = Vec::new();
+            r.push(v_nil());
+            r.push(v_str(bs_str(STR_PTR("bad argument to 'loadfile'"), 25)));
+            return r;
+        };
+        let (ok, src) = self.io_read_disk(pv.s);
+        if ok == false {
+            let r = Vec::new();
+            r.push(v_nil());
+            r.push(v_str(s_cat(bs_str(STR_PTR("cannot open "), 12), pv.s)));
+            return r;
+        };
+        return self.bi_load_source(src);
+    }
+
+    fn bi_dofile(&self, args: &Vec<Value>) -> Vec<Value> {
+        let pv = bs_arg(args, 0);
+        if pv.tag != VT_STR {
+            self.fail_str(STR_PTR("bad argument to 'dofile'"), 22);
+            return Vec::new();
+        };
+        let (ok, src) = self.io_read_disk(pv.s);
+        if ok == false {
+            self.fail_text(s_cat(bs_str(STR_PTR("cannot open "), 12), pv.s));
+            return Vec::new();
+        };
+        let fv = self.bi_load_source(src);
+        if fv[0].tag != VT_FUNC {
+            self.fail_text(v_to_string(fv[1]));
+            return Vec::new();
+        };
+        return self.call_value(fv[0], Vec::new());
     }
 
     fn sm_op_token(&self, id: i64) -> i64 {
