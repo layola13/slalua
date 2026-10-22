@@ -20,10 +20,19 @@ fn istr(s: ptr, n: u64) -> u64 {
 }
 
 impl Interp {
+    fn math_num(&self, args: &Vec<Value>, i: i64) -> f64 {
+        let v = self.v_coerce_num(bs_arg(args, i));
+        if v_is_number(v) == false {
+            self.fail_str(STR_PTR("bad argument to math function (number expected)"), 47);
+            return 0.0;
+        };
+        return v_as_num(v);
+    }
+
     fn builtin_aux(&self, id: i64, args: &Vec<Value>) -> Vec<Value> {
         if id == B_M_FMOD {
-            let a = v_as_num(bs_arg(args, 0));
-            let b = v_as_num(bs_arg(args, 1));
+            let a = self.math_num(args, 0);
+            let b = self.math_num(args, 1);
             let q = sa_math_floor(a / b);
             return bs_one(v_num(a - q * b));
         };
@@ -212,10 +221,10 @@ impl Interp {
             return r;
         };
         if id == B_M_FLOOR {
-            return bs_one(v_int(sa_math_floor(v_as_num(bs_arg(args, 0))) as i64));
+            return bs_one(v_int(sa_math_floor(self.math_num(args, 0)) as i64));
         };
         if id == B_M_CEIL {
-            return bs_one(v_int(sa_math_ceil(v_as_num(bs_arg(args, 0))) as i64));
+            return bs_one(v_int(sa_math_ceil(self.math_num(args, 0)) as i64));
         };
         if id == B_M_ABS {
             let v = bs_arg(args, 0);
@@ -225,26 +234,36 @@ impl Interp {
                 };
                 return bs_one(v);
             };
-            let f = v_as_num(v);
+            let f = self.math_num(args, 0);
             if f < 0.0 { return bs_one(v_num(0.0 - f)); };
             return bs_one(v_num(f));
         };
-        if id == B_M_MAX || id == B_M_MIN {
+        if id == B_M_MAX {
             let best = bs_arg(args, 0);
             let i = 1;
             while i < (len(args) as i64) {
-                let v = args[i];
-                if id == B_M_MIN {
-                    if v_as_num(v) < v_as_num(best) { best = v; };
-                } else {
-                    if v_as_num(v) > v_as_num(best) { best = v; };
+                let vn = self.math_num(args, i);
+                if vn > v_as_num(best) {
+                    best = args[i];
+                };
+                i = i + 1;
+            }
+            return bs_one(best);
+        };
+        if id == B_M_MIN {
+            let best = bs_arg(args, 0);
+            let i = 1;
+            while i < (len(args) as i64) {
+                let vn = self.math_num(args, i);
+                if vn < v_as_num(best) {
+                    best = args[i];
                 };
                 i = i + 1;
             }
             return bs_one(best);
         };
         if id == B_M_SQRT {
-            return bs_one(v_num(sa_math_sqrt(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(sa_math_sqrt(self.math_num(args, 0))));
         };
         if id == B_M_TYPE {
             let v = bs_arg(args, 0);
@@ -304,35 +323,35 @@ impl Interp {
             return bs_two(v_int(s1), v_int(s2));
         };
         if id == B_M_LOG {
-            let x = v_as_num(bs_arg(args, 0));
+            let x = self.math_num(args, 0);
             if len(args) > 1 {
-                let b = v_as_num(args[1]);
+                let b = self.math_num(args, 1);
                 return bs_one(v_num(log(x) / log(b)));
             };
             return bs_one(v_num(log(x)));
         };
         if id == B_M_EXP {
-            return bs_one(v_num(exp(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(exp(self.math_num(args, 0))));
         };
         if id == B_M_SIN {
-            return bs_one(v_num(sa_math_sin(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(sa_math_sin(self.math_num(args, 0))));
         };
         if id == B_M_COS {
-            return bs_one(v_num(sa_math_cos(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(sa_math_cos(self.math_num(args, 0))));
         };
         if id == B_M_TAN {
-            return bs_one(v_num(tan(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(tan(self.math_num(args, 0))));
         };
         if id == B_M_ASIN {
-            return bs_one(v_num(asin(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(asin(self.math_num(args, 0))));
         };
         if id == B_M_ACOS {
-            return bs_one(v_num(acos(v_as_num(bs_arg(args, 0)))));
+            return bs_one(v_num(acos(self.math_num(args, 0))));
         };
         if id == B_M_ATAN {
-            let y = v_as_num(bs_arg(args, 0));
+            let y = self.math_num(args, 0);
             if len(args) > 1 {
-                return bs_one(v_num(atan2(y, v_as_num(args[1]))));
+                return bs_one(v_num(atan2(y, self.math_num(args, 1))));
             };
             return bs_one(v_num(atan(y)));
         };
@@ -341,7 +360,7 @@ impl Interp {
             if x.tag == VT_INT {
                 return bs_two(x, v_num(0.0));
             };
-            let n = v_as_num(x);
+            let n = self.math_num(args, 0);
             let ip = 0.0;
             if n < 0.0 {
                 ip = sa_math_ceil(n);
@@ -355,10 +374,10 @@ impl Interp {
             return bs_two(v_num(ip), v_num(frac));
         };
         if id == B_M_DEG {
-            return bs_one(v_num(v_as_num(bs_arg(args, 0)) * 57.29577951308232));
+            return bs_one(v_num(self.math_num(args, 0) * 57.29577951308232));
         };
         if id == B_M_RAD {
-            return bs_one(v_num(v_as_num(bs_arg(args, 0)) * 0.017453292519943295));
+            return bs_one(v_num(self.math_num(args, 0) * 0.017453292519943295));
         };
         if id == B_OS_CLOCK {
             return bs_one(v_num(0.0));
