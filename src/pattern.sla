@@ -303,6 +303,7 @@ fn pat_capture_to_close(st: &PatState) -> i64 {
         level = level - 1;
     }
     st.err = 1;
+    st.errnum = -4;
     return -1;
 }
 
@@ -513,6 +514,7 @@ fn pat_match(st: &PatState, s: i64, p: i64) -> i64 {
                     let np = cur_p + 2;
                     if np >= st.plen || s_byte(st.pat, np as u64) != 91 {
                         st.err = 1;
+                        st.errnum = -5;
                         cur_s = pat_assign(cur_s, -1);
                         running = false;
                         continue;

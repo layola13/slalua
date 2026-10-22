@@ -217,6 +217,10 @@ impl Interp {
             return bs_one(v_nil());
         };
         if pat_search(&st, init0) == 0 {
+            if st.err != 0 {
+                self.fail_text(pat_err_msg(&st));
+                return Vec::new();
+            };
             return bs_one(v_nil());
         };
         if st.err != 0 {
@@ -228,6 +232,10 @@ impl Interp {
             r.push(v_int(st.mstart + 1));
             r.push(v_int(st.mend));
             let caps = pat_push_captures(&st, st.mstart, st.mend, false);
+            if st.err != 0 {
+                self.fail_text(pat_err_msg(&st));
+                return Vec::new();
+            };
             let i = 0;
             while i < (len(caps) as i64) {
                 r.push(caps[i]);
@@ -235,7 +243,12 @@ impl Interp {
             }
             return r;
         };
-        return pat_push_captures(&st, st.mstart, st.mend, true);
+        let caps = pat_push_captures(&st, st.mstart, st.mend, true);
+        if st.err != 0 {
+            self.fail_text(pat_err_msg(&st));
+            return Vec::new();
+        };
+        return caps;
     }
 
     fn pat_add_s(&self, st: &PatState, repl: u64, s: i64, e: i64) -> Vec<Value> {
@@ -280,7 +293,7 @@ impl Interp {
                         if idx < (len(st.cap_len) as i64) {
                             if st.cap_len[idx] == -1 {
                                 st.err = 1;
-                                st.errnum = idx + 1;
+                                st.errnum = -3;
                             };
                         };
                         if st.err != 0 {
@@ -367,9 +380,6 @@ impl Interp {
         if pos >= 1 {
             init0 = pos - 1;
         };
-        if init0 > ls {
-            init0 = ls;
-        };
         let st = self.new_table();
         self.table_set_str(st, istr(STR_PTR("s"), 1), v_str(s));
         self.table_set_str(st, istr(STR_PTR("p"), 1), v_str(p));
@@ -398,6 +408,10 @@ impl Interp {
         let going = true;
         let found = 0;
         while going {
+            if src > ls {
+                going = false;
+                continue;
+            };
             st.level = 0;
             st.depth = PAT_MAXCCALLS;
             let e = pat_match(&st, src, 0);

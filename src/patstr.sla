@@ -54,6 +54,15 @@ fn pat_err_msg(st: &PatState) -> u64 {
     if st.errnum == -2 {
         return s_from(STR_PTR("pattern too complex"), 19);
     };
+    if st.errnum == -3 {
+        return s_from(STR_PTR("unfinished capture"), 18);
+    };
+    if st.errnum == -4 {
+        return s_from(STR_PTR("invalid pattern capture"), 23);
+    };
+    if st.errnum == -5 {
+        return s_from(STR_PTR("missing '[' after '%f' in pattern"), 33);
+    };
     if st.errnum >= 0 {
         let m = s_from(STR_PTR("invalid capture index %"), 23);
         let d = 48 + st.errnum;
@@ -78,7 +87,7 @@ fn pat_one_capture(st: &PatState, i: i64, s: i64, e: i64) -> Value {
     let init = st.cap_init[i];
     if capl == -1 {
         st.err = 1;
-        st.errnum = i + 1;
+        st.errnum = -3;
         return v_nil();
     };
     if capl == -2 {
