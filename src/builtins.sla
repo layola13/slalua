@@ -183,7 +183,7 @@ impl Interp {
                 if i > 0 {
                     s_write(bs_str(STR_PTR(" "), 1));
                 };
-                s_write(v_to_string(args[i]));
+                s_write(self.tostring_value(args[i]));
                 i = i + 1;
             }
             s_nl();
@@ -455,22 +455,28 @@ impl Interp {
         if id == B_SETMETA {
             let t = bs_arg(&args, 0);
             let m = bs_arg(&args, 1);
-            if t.tag == VT_TABLE {
-                if self.tables[t.i].meta >= 0 {
-                    let cur = self.tables[t.i].meta;
-                    let prot = self.table_get_str(cur, bs_str(STR_PTR("__metatable"), 11));
-                    if prot.tag != VT_NIL {
-                        self.fail_str(STR_PTR("cannot change a protected metatable"), 35);
-                        return Vec::new();
-                    };
-                };
-                if m.tag == VT_TABLE {
-                    self.tables[t.i].meta = m.i;
-                } else {
-                    self.tables[t.i].meta = -1;
-                };
-                self.set_weak_mode(t.i);
+            if t.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument #1 to 'setmetatable' (table expected)"), 52);
+                return Vec::new();
             };
+            if m.tag != VT_TABLE && m.tag != VT_NIL {
+                self.fail_str(STR_PTR("bad argument #2 to 'setmetatable' (nil or table expected)"), 56);
+                return Vec::new();
+            };
+            if self.tables[t.i].meta >= 0 {
+                let cur = self.tables[t.i].meta;
+                let prot = self.table_get_str(cur, bs_str(STR_PTR("__metatable"), 11));
+                if prot.tag != VT_NIL {
+                    self.fail_str(STR_PTR("cannot change a protected metatable"), 35);
+                    return Vec::new();
+                };
+            };
+            if m.tag == VT_TABLE {
+                self.tables[t.i].meta = m.i;
+            } else {
+                self.tables[t.i].meta = -1;
+            };
+            self.set_weak_mode(t.i);
             return bs_one(t);
         };
         if (id >= B_S_LEN && id <= B_S_GSUB) || id == B_S_PACK || id == B_S_UNPACK {

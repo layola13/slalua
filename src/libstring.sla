@@ -431,7 +431,7 @@ impl Interp {
             };
         }
         if found == 0 {
-            return Vec::new();
+            return bs_one(v_nil());
         };
         return pat_push_captures(&st, st.mstart, st.mend, true);
     }
