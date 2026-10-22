@@ -257,6 +257,49 @@ impl Interp {
         return 0;
     }
 
+    fn env_table(&self, env: i64) -> Value {
+        let en = s_from(STR_PTR("_ENV"), 4);
+        let found = self.env_find_env(env, en);
+        if found >= 0 {
+            let vars = self.envs[found].vars;
+            let i = (len(vars) as i64) - 1;
+            while i >= 0 {
+                if s_eq(vars[i].name, en) {
+                    return vars[i].val;
+                };
+                i = i - 1;
+            }
+        };
+        return self.table_get(self.globals, v_str(en));
+    }
+
+    fn t_index_chain(&self, tid: i64, key: Value, depth: i64) -> Value {
+        let v = self.table_get(tid, key);
+        if v.tag != VT_NIL {
+            return v;
+        };
+        if depth >= 100 {
+            return v_nil();
+        };
+        let meta = self.tables[tid].meta;
+        if meta >= 0 {
+            let idx = self.table_get_str(meta, s_from(STR_PTR("__index"), 7));
+            if idx.tag == VT_TABLE {
+                return self.t_index_chain(idx.i, key, depth + 1);
+            };
+            if idx.tag == VT_FUNC || idx.tag == VT_BUILTIN {
+                let cargs = Vec::new();
+                cargs.push(v_table(tid));
+                cargs.push(key);
+                let out = self.call_value(idx, cargs);
+                if len(out) > 0 {
+                    return out[0];
+                };
+            };
+        };
+        return v_nil();
+    }
+
     fn env_get(&self, env: i64, name: u64) -> Value {
         let found = self.env_find_env(env, name);
         if found >= 0 {
@@ -269,6 +312,10 @@ impl Interp {
                 i = i - 1;
             }
         };
+        let en = self.env_table(env);
+        if en.tag == VT_TABLE {
+            return self.t_index_chain(en.i, v_str(name), 0);
+        };
         return self.table_get(self.globals, v_str(name));
     }
 
@@ -276,6 +323,11 @@ impl Interp {
         let found = self.env_find_env(env, name);
         if found >= 0 {
             self.env_update(found, name, val);
+            return;
+        };
+        let en = self.env_table(env);
+        if en.tag == VT_TABLE {
+            self.table_set(en.i, v_str(name), val);
             return;
         };
         self.table_set(self.globals, v_str(name), val);
