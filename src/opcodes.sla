@@ -57,6 +57,7 @@ const B_T_PACK: i64 = 43;
 const B_T_UNPACK: i64 = 44;
 const B_T_CREATE: i64 = 45;
 const B_T_SORT: i64 = 46;
+const B_T_MOVE: i64 = 47;
 const B_M_FLOOR: i64 = 60;
 const B_M_CEIL: i64 = 61;
 const B_M_ABS: i64 = 62;

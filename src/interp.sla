@@ -8,6 +8,7 @@
 @import "src/interp_core.sla"
 @import "src/interp_expr.sla"
 @import "src/interp_arith.sla"
+@import "src/libmove.sla"
 @import "src/interp_stmt.sla"
 @import "src/builtins.sla"
 

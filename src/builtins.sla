@@ -16,6 +16,7 @@
 @import "src/libio.sla"
 @import "src/libdebug.sla"
 @import "src/libnumber.sla"
+@import "src/libmove.sla"
 
 
 impl Interp {
@@ -122,6 +123,7 @@ impl Interp {
         self.table_set_str(tt, bs_str(STR_PTR("unpack"), 6), v_builtin(B_T_UNPACK));
         self.table_set_str(tt, bs_str(STR_PTR("create"), 6), v_builtin(B_T_CREATE));
         self.table_set_str(tt, bs_str(STR_PTR("sort"), 4), v_builtin(B_T_SORT));
+        self.table_set_str(tt, bs_str(STR_PTR("move"), 4), v_builtin(B_T_MOVE));
         self.table_set_str(self.globals, bs_str(STR_PTR("table"), 5), v_table(tt));
         let mt = self.new_table();
         self.table_set_str(mt, bs_str(STR_PTR("floor"), 5), v_builtin(B_M_FLOOR));
@@ -483,6 +485,9 @@ impl Interp {
         };
         if id == B_IO_WRITE || (id >= B_IO_READ && id <= B_IO_POPEN) {
             return self.builtin_io(id, &args);
+        };
+        if id == B_T_MOVE {
+            return self.bi_table_move(&args);
         };
         if (id >= B_T_INSERT && id <= B_T_SORT) || (id >= B_M_FLOOR && id <= B_M_RAD) || id == B_REQUIRE || id == B_PKG_SEARCHPATH || id == B_DBG_INFO || id == B_DBG_TRACE || id == B_CORO_RUNNING || id == B_CORO_UNSUPPORTED || id == B_IO_UNSUPPORTED {
             return self.builtin_aux(id, &args);

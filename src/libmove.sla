@@ -1,0 +1,82 @@
+@import "sa_std/vec.sa"
+@import "src/value.sla"
+@import "src/interp_core.sla"
+@import "src/opcodes.sla"
+
+const LUA_MAXINTEGER: i64 = 9223372036854775807;
+
+impl Interp {
+    fn move_check_int(&self, args: &Vec<Value>, idx: i64) -> i64 {
+        if len(args) <= idx {
+            let m1 = s_cat(s_from(STR_PTR("bad argument #"), 14), s_i64(idx + 1));
+            let m2 = s_cat(m1, s_from(STR_PTR(" to 'move' (number expected, got no value)"), 42));
+            self.fail_text(m2);
+            return 0;
+        };
+        let v = args[idx];
+        if v_is_number(v) == false {
+            let m1 = s_cat(s_from(STR_PTR("bad argument #"), 14), s_i64(idx + 1));
+            let m2 = s_cat(m1, s_from(STR_PTR(" to 'move' (number expected, got "), 33));
+            let m3 = s_cat(m2, self.vtype_name(v));
+            let m4 = s_cat(m3, s_from(STR_PTR(")"), 1));
+            self.fail_text(m4);
+            return 0;
+        };
+        return self.bi_int(v, 0);
+    }
+
+    fn bi_table_move(&self, args: &Vec<Value>) -> Vec<Value> {
+        let a1 = bs_arg(args, 0);
+        if a1.tag != VT_TABLE {
+            self.fail_str(STR_PTR("bad argument #1 to 'move' (table expected)"), 42);
+            return Vec::new();
+        };
+        let f = self.move_check_int(args, 1);
+        if self.err != 0 {
+            return Vec::new();
+        };
+        let e = self.move_check_int(args, 2);
+        if self.err != 0 {
+            return Vec::new();
+        };
+        let t = self.move_check_int(args, 3);
+        if self.err != 0 {
+            return Vec::new();
+        };
+        let a1id = a1.i;
+        let a2id = a1id;
+        if len(args) > 4 {
+            let other = args[4];
+            if other.tag != VT_TABLE {
+                self.fail_str(STR_PTR("bad argument #5 to 'move' (table expected)"), 42);
+                return Vec::new();
+            };
+            a2id = other.i;
+        };
+        if e >= f {
+            if f <= 0 && e > LUA_MAXINTEGER + f {
+                self.fail_str(STR_PTR("bad argument #2 to 'move' (too many elements to move)"), 53);
+                return Vec::new();
+            };
+            let n = e - f + 1;
+            if t > LUA_MAXINTEGER - n + 1 {
+                self.fail_str(STR_PTR("bad argument #4 to 'move' (destination wrap around)"), 51);
+                return Vec::new();
+            };
+            if t > e || t <= f || a2id != a1id {
+                let i = 0;
+                while i < n {
+                    self.table_set(a2id, v_int(t + i), self.table_get(a1id, v_int(f + i)));
+                    i = i + 1;
+                }
+            } else {
+                let i = n - 1;
+                while i >= 0 {
+                    self.table_set(a2id, v_int(t + i), self.table_get(a1id, v_int(f + i)));
+                    i = i - 1;
+                }
+            };
+        };
+        return bs_one(v_table(a2id));
+    }
+};
